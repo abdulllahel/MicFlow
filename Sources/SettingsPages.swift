@@ -1,4 +1,6 @@
 import AppKit
+import CoreImage
+import CoreImage.CIFilterBuiltins
 import SwiftUI
 import WebKit
 
@@ -62,6 +64,7 @@ struct GeneralPage: View {
             } right: {
                 AccountCard(account: model.account, theme: theme)
                 ClipboardCard(clipboard: model.clipboard, account: model.account, theme: theme)
+                WindowLayoutCard(layout: model.windowLayout, theme: theme)
                 FeatureCard(theme: theme, systemImage: "lock.shield.fill", title: "Privacy", subtitle: "What stays on this Mac") {
                     Note(text: "Your dictation history, stats and captures stay on this Mac. Your API keys are kept in the Keychain; if you sign in, your preferences and API key are also saved to your account.")
                 }
@@ -85,19 +88,19 @@ struct GeneralPage: View {
         } else {
             switch updater.state {
             case .available(let version, let notes):
-                Text("MicFlow \(version) is ready").font(.system(size: 14, weight: .semibold))
+                Text("MicFlow \(version) is ready").font(.inter(14, .semibold))
                 if !notes.isEmpty { Note(text: notes) }
                 PillButton(title: "Update and restart", systemImage: "arrow.down.circle", style: .cream, action: updater.install)
                 Note(text: "Your settings, API key and permissions stay as they are.")
             case .installing(let step):
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text(step).font(.system(size: 13))
+                    Text(step).font(.inter(13))
                 }
             case .checking:
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("Checking…").font(.system(size: 13))
+                    Text("Checking…").font(.inter(13))
                 }
             case .upToDate:
                 Note(text: "You have the latest version.")
@@ -135,14 +138,14 @@ struct AboutPage: View {
                         .clipShape(Circle())
                         .overlay(Circle().strokeBorder(Palette.cream, lineWidth: 3))
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Made by").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.cream)
+                        Text("Made by").font(.inter(12, .semibold)).foregroundStyle(Palette.cream)
                         Text(about.name).font(.display(34))
-                        Text(about.role).font(.system(size: 14, weight: .medium)).foregroundStyle(Palette.greyOnDark)
+                        Text(about.role).font(.inter(14, .medium)).foregroundStyle(Palette.greyOnDark)
                         HStack(spacing: 6) {
                             Image(systemName: "sparkles")
                             Text("Open to feature requests")
                         }
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.inter(12, .semibold))
                         .foregroundStyle(Palette.ink)
                         .padding(.horizontal, 12).padding(.vertical, 6)
                         .background(Palette.yellow, in: Capsule())
@@ -158,7 +161,7 @@ struct AboutPage: View {
             CardColumns {
                 FeatureCard(theme: theme, systemImage: "person.fill", title: "About me", subtitle: "Why MicFlow exists") {
                     Text(about.bio)
-                        .font(.system(size: 13))
+                        .font(.inter(13))
                         .lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
@@ -192,13 +195,13 @@ struct AboutPage: View {
         } label: {
             HStack(spacing: 10) {
                 Circle().fill(Palette.cream).frame(width: 30, height: 30)
-                    .overlay(Image(systemName: systemImage).font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.pink))
+                    .overlay(Image(systemName: systemImage).font(.inter(12, .bold)).foregroundStyle(Palette.pink))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.system(size: 13, weight: .semibold))
-                    Text(detail).font(.system(size: 12)).foregroundStyle(Palette.greyOnDark)
+                    Text(title).font(.inter(13, .semibold))
+                    Text(detail).font(.inter(12)).foregroundStyle(Palette.greyOnDark)
                 }
                 Spacer()
-                Image(systemName: "arrow.up.right").font(.system(size: 12, weight: .semibold))
+                Image(systemName: "arrow.up.right").font(.inter(12, .semibold))
             }
             .padding(10)
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
@@ -259,7 +262,7 @@ struct PostsPage: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("What's New").font(.display(26)).foregroundStyle(Palette.white)
                 Text("New updates and tips from the creator of MicFlow are shared here.")
-                    .font(.system(size: 13)).foregroundStyle(Palette.cream)
+                    .font(.inter(13)).foregroundStyle(Palette.cream)
             }
             .padding(.leading, 4)
             browserPanel
@@ -276,9 +279,9 @@ struct PostsPage: View {
                 }
                 toolbarButton("house.fill", help: "All posts", enabled: !browser.isHome) { browser.showHome(store.content) }
                 HStack(spacing: 6) {
-                    Image(systemName: browser.isHome ? "newspaper.fill" : "globe").font(.system(size: 11))
+                    Image(systemName: browser.isHome ? "newspaper.fill" : "globe").font(.inter(11))
                     Text(browser.isHome ? "What's New" : browser.address)
-                        .font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
+                        .font(.inter(12)).lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 0)
                     if browser.isLoading || store.isLoading { ProgressView().controlSize(.mini) }
                 }
@@ -310,7 +313,7 @@ struct PostsPage: View {
     private func toolbarButton(_ systemImage: String, help: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.inter(13, .semibold))
                 .frame(width: 30, height: 30)
                 .foregroundStyle(enabled ? Palette.ink : Palette.greyOnLight.opacity(0.5))
                 .background(Color(hex: 0xF2F2F0), in: Circle())
@@ -469,6 +472,18 @@ enum PostsHTML {
 
 /// Universal Clipboard: on/off, this Mac's pairing code, and entering another device's code.
 struct ClipboardCard: View {
+    /// A QR code for [text].
+    static func qrImage(_ text: String) -> NSImage? {
+        guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+        filter.setValue(Data(text.utf8), forKey: "inputMessage")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+        guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 8, y: 8)) else { return nil }
+        let rep = NSCIImageRep(ciImage: output)
+        let image = NSImage(size: rep.size)
+        image.addRepresentation(rep)
+        return image
+    }
+
     @ObservedObject var clipboard: UniversalClipboard
     @ObservedObject var account: Account
     let theme: HomeTheme
@@ -480,17 +495,35 @@ struct ClipboardCard: View {
                     subtitle: "Copy here, paste on your phone", isOn: $clipboard.enabled) {
             if !account.isSignedIn {
                 Note(text: "Sign in with Google to share your clipboard with MicFlow on your phone.")
-            } else if let code = clipboard.code {
-                Note(text: "Text and images you copy go to your other devices, end-to-end encrypted. To link a device, enter this code in its MicFlow:")
-                Text(code).font(.system(size: 17, weight: .bold, design: .monospaced)).textSelection(.enabled)
-                HStack {
-                    TextField("Or enter the code from your phone", text: $entered).textFieldStyle(.roundedBorder)
-                    PillButton(title: "Link", systemImage: "link") {
-                        wrongCode = !clipboard.useCode(entered)
-                        if !wrongCode { entered = "" }
+            } else {
+                Note(text: "Text and images you copy go to your other devices, end-to-end encrypted. To link a device, make a code here and enter it (or scan the QR) in MicFlow on the other device.")
+                if let email = account.user?.email {
+                    Note(text: "Signed in as \(email). Log in with this same Google account on your other devices, or the code will not be found.")
+                }
+                if let code = clipboard.pairingCode {
+                    HStack(spacing: 16) {
+                        if let qr = Self.qrImage("micflow://pair?c=\(code)") {
+                            Image(nsImage: qr).interpolation(.none).resizable().frame(width: 96, height: 96)
+                        }
+                        Text(code).font(.system(size: 30, weight: .heavy, design: .monospaced)).textSelection(.enabled)
                     }
                 }
-                if wrongCode { Note(text: "That isn't a valid code: it has 16 letters and numbers.", isError: true) }
+                if !clipboard.pairingStatus.isEmpty { Note(text: clipboard.pairingStatus) }
+                HStack {
+                    PillButton(title: clipboard.pairingCode == nil ? "Make a code" : "New code", systemImage: "qrcode") {
+                        Task { await clipboard.startPairing() }
+                    }
+                }
+                HStack {
+                    TextField("Or enter the 6-character code from your phone", text: $entered).textFieldStyle(.roundedBorder)
+                    PillButton(title: "Link", systemImage: "link") {
+                        Task {
+                            wrongCode = !(await clipboard.join(code: entered))
+                            if !wrongCode { entered = "" }
+                        }
+                    }
+                }
+                if wrongCode { Note(text: "That code wasn't found. It must be less than 10 minutes old, have 6 letters and numbers, and the other device must be logged in with the same Google account as this Mac.", isError: true) }
                 if !clipboard.status.isEmpty { Note(text: clipboard.status) }
             }
         }

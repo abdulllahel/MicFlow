@@ -15,7 +15,9 @@ final class TrackingSpeedController {
 
     /// macOS's "Fast", the top of its own slider.
     static let macOSFast = 3.0
-    static let maximum = 9.0
+    /// The top of the slider: 50% past the old top. Beyond `comfortable` the pointer gets hard to control.
+    static let maximum = 13.5
+    static let comfortable = 9.0
 
     var speed = macOSFast { didSet { apply() } }
     var onStateChange: ((State) -> Void)?

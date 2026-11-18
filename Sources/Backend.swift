@@ -192,21 +192,26 @@ final class Account: NSObject, ObservableObject, ASWebAuthenticationPresentation
 
     // MARK: Google sign-in
 
-    /// The Google permission that lets MicFlow make the user's API key in their own account.
-    static let cloudScope = "https://www.googleapis.com/auth/cloud-platform"
-    /// Whether sign-in should also make an API key (set by the app: when there's no key yet).
-    var wantsKeySetup: () -> Bool = { false }
-    /// Gets Google's access token when sign-in asked for the key permission (nil: none came back).
-    /// Making the key: the guide, progress, the terms step.
-    let keySetup = KeySetupFlow()
-
     /// Opens Google's sign-in in a secure browser sheet, then comes back to MicFlow (PKCE flow).
-    /// With `setUpKey` (or when the app has no key yet), Google is also asked for permission to
-    /// make a voice-typing key in the user's account.
-    func signIn() { signIn(setUpKey: wantsKeySetup()) }
+    /// Sign-in asks Google only for the person's name, email and photo. People make their own API key
+    /// with the key provider and paste it in.
 
-    func signIn(setUpKey: Bool) {
-        guard isConfigured, !isWorking else { return }
+    /// Google's permission to save files this app creates in the person's own Drive (not sensitive:
+    /// it can't see any other file).
+    static let driveScope = "https://www.googleapis.com/auth/drive.file"
+    private var driveContinuation: ((String?) -> Void)?
+
+    /// A Drive access token, asking Google for permission the first time. The sign-in sheet opens
+    /// only when needed; nil when the person closes it or Google says no.
+    func driveAccessToken() async -> String? {
+        await withCheckedContinuation { continuation in
+            driveContinuation = { continuation.resume(returning: $0) }
+            signIn(extraScope: Self.driveScope)
+        }
+    }
+
+    func signIn(extraScope: String? = nil) {
+        guard isConfigured, !isWorking else { driveContinuation?(nil); driveContinuation = nil; return }
         let verifier = Self.randomString()
         let challenge = Data(SHA256.hash(data: Data(verifier.utf8))).base64URLEncoded()
         var components = URLComponents(string: BackendConfig.url + "/auth/v1/authorize")!
@@ -216,17 +221,15 @@ final class Account: NSObject, ObservableObject, ASWebAuthenticationPresentation
             URLQueryItem(name: "code_challenge", value: challenge),
             URLQueryItem(name: "code_challenge_method", value: "s256"),
         ]
-        if setUpKey {
-            components.queryItems?.append(URLQueryItem(name: "scopes", value: Self.cloudScope))
-            // Google's account list every time, so "Use another Google account" really can pick another one.
-            components.queryItems?.append(URLQueryItem(name: "prompt", value: "select_account"))
-        }
+        if let extraScope { components.queryItems?.append(URLQueryItem(name: "scopes", value: extraScope)) }
         isWorking = true
         message = nil
         let web = ASWebAuthenticationSession(url: components.url!, callbackURLScheme: BackendConfig.callbackScheme) { [weak self] url, error in
             Task { @MainActor in
                 guard let self else { return }
                 defer { self.isWorking = false; self.webSession = nil }
+                var driveDone = false
+                defer { if !driveDone { self.driveContinuation?(nil); self.driveContinuation = nil } }
                 let items = url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems } ?? []
                 guard let url, error == nil, let code = items.first(where: { $0.name == "code" })?.value else {
                     if let error = error as? ASWebAuthenticationSessionError, error.code == .canceledLogin {
@@ -244,7 +247,12 @@ final class Account: NSObject, ObservableObject, ASWebAuthenticationPresentation
                     self.session = try Self.session(from: data)
                     let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
                     let googleToken = (json?["provider_token"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-                    self.onSignedIn?(setUpKey ? googleToken : nil, setUpKey)
+                    if extraScope != nil {
+                        driveDone = true
+                        self.driveContinuation?(googleToken)
+                        self.driveContinuation = nil
+                    }
+                    self.onSignedIn?()
                 } catch {
                     self.message = error.localizedDescription
                 }
@@ -256,9 +264,8 @@ final class Account: NSObject, ObservableObject, ASWebAuthenticationPresentation
         web.start()
     }
 
-    /// Called after a Google sign-in: Google's access token (when key setup was asked for) and
-    /// whether it was.
-    var onSignedIn: ((String?, Bool) -> Void)?
+    /// Called after a Google sign-in.
+    var onSignedIn: (() -> Void)?
 
     /// Called after signing out (so the next sign-in saves everything again).
     var onSignedOut: (() -> Void)?

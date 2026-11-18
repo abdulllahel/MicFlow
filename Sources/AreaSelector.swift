@@ -7,7 +7,7 @@ import AppKit
 final class AreaSelector {
     private static var current: AreaSelector?
 
-    private var windows: [NSWindow] = []
+    private var windows: [NSPanel] = []
     private let completion: (CGRect?) -> Void
 
     /// `hint` is shown at the top of each screen until the user starts dragging.
@@ -23,10 +23,13 @@ final class AreaSelector {
     }
 
     private func show(hint: String) {
-        NSApp.activate(ignoringOtherApps: true)
+        // MicFlow is deliberately not activated: activating it would switch to the desktop where its own
+        // window is open, which from a full-screen app means being thrown out of it.
         let mouse = NSEvent.mouseLocation
         for screen in NSScreen.screens {
-            let window = OverlayWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
+            let window = OverlayWindow(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            window.hidesOnDeactivate = false
+            window.isFloatingPanel = true
             window.level = .screenSaver
             window.isOpaque = false
             window.backgroundColor = .clear
@@ -56,7 +59,7 @@ final class AreaSelector {
 }
 
 /// Borderless windows can't take key presses unless they say so; this one needs Esc.
-private final class OverlayWindow: NSWindow {
+private final class OverlayWindow: NSPanel {
     override var canBecomeKey: Bool { true }
 }
 

@@ -165,7 +165,7 @@ final class KeyRemapController {
         } else {
             languageTap.remove()
             if needsLanguageTap, !AXIsProcessTrusted() {
-                AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
+                AccessibilityPrompt.askOnce()
             }
         }
         if appliedServices.isEmpty {

@@ -23,7 +23,8 @@ final class Updater: ObservableObject {
     var autoInstallAllowed: () -> Bool = { false }
     private var timer: Timer?
     private let defaults = UserDefaults.standard
-    private static let latest = URL(string: "https://api.github.com/repos/\(SiteContentStore.repository)/releases/latest")!
+    /// The website tells apps which version is current: one small file, changed on every release.
+    private static let latest = URL(string: "https://micflow.abdullahel.com/update.json")!
     private static let notifiedKey = "updateNotifiedVersion"
     /// The version an automatic update last tried to install, and how many times.
     private static let attemptVersionKey = "autoUpdateAttemptVersion"
@@ -59,26 +60,26 @@ final class Updater: ObservableObject {
         if !quietly { state = .checking }
         Task {
             do {
-                var request = URLRequest(url: Self.latest)
-                request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+                var components = URLComponents(url: Self.latest, resolvingAgainstBaseURL: false)!
+                components.queryItems = [URLQueryItem(name: "t", value: String(Int(Date().timeIntervalSince1970)))]
+                var request = URLRequest(url: components.url!)
                 request.timeoutInterval = 15
+                request.cachePolicy = .reloadIgnoringLocalCacheData
                 let (data, response) = try await URLSession.shared.data(for: request)
                 guard (response as? HTTPURLResponse)?.statusCode == 200,
-                      let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let tag = json["tag_name"] as? String else {
+                      let json = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["mac"] as? [String: Any],
+                      let version = json["version"] as? String else {
                     if !quietly { state = .failed("Couldn't check for updates. Try again later.") }
                     return
                 }
-                let version = tag.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
-                let assets = json["assets"] as? [[String: Any]] ?? []
-                let dmg = assets.lazy.compactMap { $0["browser_download_url"] as? String }.first { $0.hasSuffix(".dmg") }
-                guard Self.isNewer(version, than: currentVersion), let dmg, let url = URL(string: dmg) else {
+                let notes = (json["notes"] as? [String] ?? []).map { "• " + $0 }.joined(separator: "\n")
+                guard Self.isNewer(version, than: currentVersion), let link = json["url"] as? String, let url = URL(string: link) else {
                     if case .available = state { return }
                     state = quietly ? .idle : .upToDate
                     return
                 }
                 downloadURL = url
-                state = .available(version: version, notes: Self.summary(json["body"] as? String ?? ""))
+                state = .available(version: version, notes: notes)
                 if autoInstallAllowed(), autoAttemptsLeft(for: version) {
                     install()
                 } else {
@@ -176,7 +177,7 @@ final class Updater: ObservableObject {
             let newApp = mount.appendingPathComponent("MicFlow.app")
             guard FileManager.default.fileExists(atPath: newApp.path) else { throw Failure("The download has no MicFlow app in it.") }
             guard Self.isSignedLikeThisApp(newApp) else {
-                throw Failure("The new version isn't signed like this one, so it wasn't installed. Download it from GitHub instead.")
+                throw Failure("The new version isn't signed like this one, so it wasn't installed. Download it from micflow.abdullahel.com instead.")
             }
             try? FileManager.default.removeItem(at: staged)
             try await Self.run("/usr/bin/ditto", [newApp.path, staged.path])
@@ -201,7 +202,7 @@ final class Updater: ObservableObject {
             if hadApp { try fm.moveItem(at: current, to: old) }
         } catch {
             try? fm.removeItem(at: staged)
-            throw Failure("MicFlow can't replace \(current.path) (it may belong to another account on this Mac). Download MicFlow again from GitHub and drag it to Applications.")
+            throw Failure("MicFlow can't replace \(current.path) (it may belong to another account on this Mac). Download MicFlow again from micflow.abdullahel.com and drag it to Applications.")
         }
         do {
             try fm.moveItem(at: staged, to: current)

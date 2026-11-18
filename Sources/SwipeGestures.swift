@@ -46,7 +46,7 @@ final class SwipeGestureController {
         guard timer == nil else { return }
         touches.addUser()
         if !AXIsProcessTrusted() {
-            AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
+            AccessibilityPrompt.askOnce()
         }
         swipeObserver = NotificationCenter.default.addObserver(forName: .magicMouseSwipe, object: nil, queue: .main) { [weak self] note in
             guard let self, self.state == .running, let direction = note.object as? SwipeDirection else { return }

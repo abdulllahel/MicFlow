@@ -92,15 +92,11 @@ Your words are pasted within a second of letting go, and also copied, so you can
 
 ![The Voice page: engine, keys, and Clean-up with your own instructions](Design/Screenshots/voice.png)
 
-**Getting started:** sign in with Google on Home. MicFlow turns on voice typing, makes your free API key in your own Google account (no copying or pasting), and saves your preferences, instructions, shortcuts and settings to your account, so they all come back on any Mac you sign in on. A short guide first shows the Google screens you'll see and what to click; if Google asks you to accept its terms (one or two pages), MicFlow opens each one, ticks them off as you go, and notices by itself when you're done.
+**Getting started:** add your free API key on Home (MicFlow opens the key provider's page, you create a key and paste it). Signing in with Google is optional and saves your preferences, instructions, shortcuts and settings to your account, so they all come back on any Mac you sign in on.
 
-If Google won't make a key for your account (Google decides this, partly from how the account has been used), MicFlow explains what to do and lets you paste a key of your own. Your key stays in your Mac's Keychain, and your account keeps only a locked (encrypted) copy. The Voice Typing tab appears once you're signed in.
+If a key stops working, MicFlow says so and asks for a new one. Your key stays in your Mac's Keychain, and if you sign in, your account keeps only a locked (encrypted) copy. The Voice Typing tab is always there; signing in is optional.
 
-![Home before you sign in](Design/Screenshots/home-setup.jpg)
-
-**Step-by-step install guide (Mac and Android, with pictures):** [MicFlow-Install-Guide.pdf](Guide/MicFlow-Install-Guide.pdf). It covers opening MicFlow the first time on a Mac, getting past Play Protect on Android, the permissions, signing in, and what to do if Google won't make a key for your account.
-
-![The step-by-step guide before signing in with Google](Design/Screenshots/key-guide.jpg)
+**Step-by-step install guide (Mac and Android, with pictures):** [MicFlow-Install-Guide.pdf](Guide/MicFlow-Install-Guide.pdf). It covers opening MicFlow the first time on a Mac, getting past Play Protect on Android, the permissions, adding your API key, and what to do if a key stops working.
 
 ### 🎛️ Preferences
 - **Your instructions:** tell clean-up who you are and how you write. *"I'm a UX designer: I talk about Figma, wireframes and user flows."*

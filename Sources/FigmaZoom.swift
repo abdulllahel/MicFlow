@@ -29,7 +29,7 @@ final class FigmaZoomController {
     func start() {
         guard timer == nil else { return }
         if !AXIsProcessTrusted() {
-            AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
+            AccessibilityPrompt.askOnce()
         }
         updateFrontmostApp(NSWorkspace.shared.frontmostApplication)
         activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -72,8 +72,42 @@ final class FigmaZoomController {
         figmaIsFrontmost = app?.bundleIdentifier.map(Self.figmaBundleIDs.contains) ?? false
     }
 
+    /// Figma's side panels, top bar and bottom toolbar are scrolled normally; only the canvas zooms.
+    /// The canvas is found from the window's position (Figma doesn't tell other apps where its canvas is),
+    /// so these margins are a best guess for Figma's standard layout.
+    private static let leftPanel: CGFloat = 250, rightPanel: CGFloat = 250, topBar: CGFloat = 50
+    private static let toolbarWidth: CGFloat = 460, toolbarHeight: CGFloat = 72
+
+    private var cachedWindow: (rect: CGRect, at: Date)?
+
+    /// Figma's biggest on-screen window, in the same top-left coordinates as events.
+    private func figmaWindowRect() -> CGRect? {
+        if let cachedWindow, Date().timeIntervalSince(cachedWindow.at) < 0.4 { return cachedWindow.rect }
+        guard let app = NSWorkspace.shared.frontmostApplication,
+              let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return nil }
+        let rects = list.compactMap { info -> CGRect? in
+            guard (info[kCGWindowOwnerPID as String] as? Int32) == app.processIdentifier, (info[kCGWindowLayer as String] as? Int) == 0,
+                  let bounds = info[kCGWindowBounds as String] as? [String: CGFloat] else { return nil }
+            return CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
+        }
+        let biggest = rects.max { $0.width * $0.height < $1.width * $1.height }
+        if let biggest { cachedWindow = (biggest, Date()) }
+        return biggest
+    }
+
+    /// Whether the pointer is over Figma's canvas (not a panel, the top bar or the bottom toolbar).
+    private func isOverCanvas(_ point: CGPoint) -> Bool {
+        guard let window = figmaWindowRect(), window.contains(point) else { return false }
+        let canvas = CGRect(x: window.minX + Self.leftPanel, y: window.minY + Self.topBar,
+                            width: window.width - Self.leftPanel - Self.rightPanel, height: window.height - Self.topBar)
+        guard canvas.contains(point) else { return false }
+        let toolbar = CGRect(x: window.midX - Self.toolbarWidth / 2, y: window.maxY - Self.toolbarHeight,
+                             width: Self.toolbarWidth, height: Self.toolbarHeight)
+        return !toolbar.contains(point)
+    }
+
     private func handle(_ event: CGEvent) {
-        guard figmaIsFrontmost else { return }
+        guard figmaIsFrontmost, isOverCanvas(event.location) else { return }
         let vertical = abs(event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1))
         let horizontal = abs(event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2))
         guard vertical >= horizontal else { return }

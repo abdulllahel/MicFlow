@@ -11,9 +11,17 @@ final class DictationLog: ObservableObject {
         let words: Int
         /// How long the voice key was held.
         let seconds: Double
+        /// Which device it was dictated on (nil for entries made before history sync).
+        var device: String? = nil
+        var deviceName: String? = nil
+        /// "mac" or "android" (nil on entries made before history sync: those are from the device they're on).
+        var platform: String? = nil
     }
 
     @Published private(set) var entries: [Entry] = []
+    /// Told about every dictation made on this Mac, so history sync can send it to your other devices.
+    var onAdded: ((Entry) -> Void)?
+    var onRemoved: ((Entry) -> Void)?
 
     /// A typical typing speed, to work out the time voice typing saved.
     static let typingWPM = 40.0
@@ -36,7 +44,20 @@ final class DictationLog: ObservableObject {
     func add(_ text: String, seconds: Double) {
         let words = Self.wordCount(text)
         guard words > 0 else { return }
-        entries.append(Entry(date: Date(), text: text, words: words, seconds: seconds))
+        let entry = Entry(date: Date(), text: text, words: words, seconds: seconds,
+                          device: UserDefaults.standard.string(forKey: "clipboardDeviceID"), deviceName: Host.current().localizedName ?? "Mac", platform: "mac")
+        entries.append(entry)
+        if entries.count > Self.limit { entries.removeFirst(entries.count - Self.limit) }
+        save()
+        onAdded?(entry)
+    }
+
+    /// Dictations from your other devices: added in date order, never twice.
+    func merge(_ incoming: [Entry]) {
+        let known = Set(entries.map(\.id))
+        let fresh = incoming.filter { !known.contains($0.id) }
+        guard !fresh.isEmpty else { return }
+        entries = (entries + fresh).sorted { $0.date < $1.date }
         if entries.count > Self.limit { entries.removeFirst(entries.count - Self.limit) }
         save()
     }
@@ -44,6 +65,7 @@ final class DictationLog: ObservableObject {
     func remove(_ entry: Entry) {
         entries.removeAll { $0.id == entry.id }
         save()
+        onRemoved?(entry)
     }
 
     func clear() {

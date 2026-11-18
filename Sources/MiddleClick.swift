@@ -31,7 +31,7 @@ final class MiddleClickController {
         guard timer == nil else { return }
         touches.addUser()
         if !AXIsProcessTrusted() {
-            AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
+            AccessibilityPrompt.askOnce()
         }
         // Re-checks for permission being granted and for the mouse connecting or reconnecting.
         timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in self?.update() }

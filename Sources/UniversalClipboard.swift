@@ -11,6 +11,10 @@ final class UniversalClipboard: ObservableObject {
     static let maxImageBytes = 5_000_000
     private static let codeAlphabet = Array("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
     private let codeSecret = KeychainSecret(service: "local.micboost.clipboard-code")
+    private let keySecret = KeychainSecret(service: "local.micboost.clipboard-key")
+    private var sharedKey: SymmetricKey?
+    @Published private(set) var pairingCode: String?
+    @Published private(set) var pairingStatus = ""
 
     @Published var enabled: Bool = UserDefaults.standard.object(forKey: "universalClipboard") as? Bool ?? true {
         didSet { UserDefaults.standard.set(enabled, forKey: "universalClipboard"); restart() }
@@ -19,7 +23,7 @@ final class UniversalClipboard: ObservableObject {
     @Published private(set) var status = ""
 
     private let account: Account
-    private let deviceID: String
+    let deviceID: String
     private var lastChange = NSPasteboard.general.changeCount
     private var poll: Timer?
     private var socket: URLSessionWebSocketTask?
@@ -34,40 +38,104 @@ final class UniversalClipboard: ObservableObject {
 
     // MARK: Pairing code
 
-    /// Makes this Mac's code the first time it's needed. Another device enters it to join.
+    /// Loads this Mac's clipboard key (made on first use). Devices link by a short one-time code: the
+    /// code only carries the key from one device to the other, it isn't the key itself.
     func start() {
         Task {
             let saved = await Task.detached { [codeSecret] in codeSecret.load() }.value
-            if let saved, !saved.isEmpty { code = saved } else { setCode(Self.newCode()) }
+            if let saved, !saved.isEmpty { code = saved }   // the old 16-character code, still readable
+            let stored = await Task.detached { [keySecret] in keySecret.load() }.value
+            if let stored, let data = Data(base64Encoded: stored), data.count == 32 { sharedKey = SymmetricKey(data: data) }
+            else {
+                let fresh = SymmetricKey(size: .bits256)
+                setSharedKey(fresh)
+            }
             restart()
         }
     }
 
-    static func newCode() -> String {
-        let chars = (0..<16).map { _ in codeAlphabet[Int.random(in: 0..<codeAlphabet.count)] }
-        return stride(from: 0, to: 16, by: 4).map { String(chars[$0..<$0 + 4]) }.joined(separator: "-")
+    static let pairingLength = 6
+
+    static func newPairingCode() -> String {
+        String((0..<pairingLength).map { _ in codeAlphabet[Int.random(in: 0..<codeAlphabet.count)] })
     }
 
-    /// Uses the code from another device; returns false when it isn't a valid code.
-    @discardableResult func useCode(_ text: String) -> Bool {
-        let clean = Self.normalize(text)
-        guard clean.count == 16, clean.allSatisfy({ Self.codeAlphabet.contains($0) }) else { return false }
-        let chars = Array(clean)
-        setCode(stride(from: 0, to: 16, by: 4).map { String(chars[$0..<$0 + 4]) }.joined(separator: "-"))
-        restart()
-        return true
+    private func setSharedKey(_ key: SymmetricKey) {
+        sharedKey = key
+        keySecret.save(key.withUnsafeBytes { Data($0) }.base64EncodedString())
     }
-
-    private func setCode(_ value: String) { code = value; codeSecret.save(value) }
 
     private static func normalize(_ code: String) -> String {
         code.uppercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
     }
 
-    private func key(user: String) -> SymmetricKey? {
+    /// The key that wraps the clipboard key for the short time a pairing code is valid.
+    private static func wrapKey(code: String, user: String) -> SymmetricKey {
+        HKDF<SHA256>.deriveKey(inputKeyMaterial: SymmetricKey(data: Data(normalize(code).utf8)),
+                               salt: Data(user.utf8), info: Data("MicFlow pairing v2".utf8), outputByteCount: 32)
+    }
+
+    /// The old 16-character-code key, kept only so items from devices on the old version still open.
+    private func legacyKey(user: String) -> SymmetricKey? {
         guard let code else { return nil }
         return HKDF<SHA256>.deriveKey(inputKeyMaterial: SymmetricKey(data: Data(Self.normalize(code).utf8)),
                                       salt: Data(user.utf8), info: Data("MicFlow clipboard v1".utf8), outputByteCount: 32)
+    }
+
+    private func key(user: String) -> SymmetricKey? { sharedKey }
+
+    /// History is sealed with the same key your linked devices share, so only they can read it.
+    func sealHistory(_ plain: Data) -> Data? {
+        guard let key = sharedKey, let box = try? AES.GCM.seal(plain, using: key) else { return nil }
+        return box.combined
+    }
+
+    func openHistory(_ sealed: Data) -> Data? {
+        guard let key = sharedKey, let box = try? AES.GCM.SealedBox(combined: sealed) else { return nil }
+        return try? AES.GCM.open(box, using: key)
+    }
+
+    /// Starts linking another device: makes a 6-character code that works for 10 minutes.
+    func startPairing() async {
+        guard let user = account.user?.id, let key = sharedKey, let token = try? await account.token() else {
+            pairingStatus = "Sign in with Google first."
+            return
+        }
+        let newCode = Self.newPairingCode()
+        let raw = key.withUnsafeBytes { Data($0) }
+        guard let box = try? AES.GCM.seal(raw, using: Self.wrapKey(code: newCode, user: user)), let sealed = box.combined else { return }
+        let old = ISO8601DateFormatter.withFraction.string(from: Date().addingTimeInterval(-600))
+        _ = try? await Backend.request("DELETE", "/rest/v1/clipboard_pairings", query: [URLQueryItem(name: "created_at", value: "lt.\(old)")], token: token)
+        do {
+            _ = try await Backend.request("POST", "/rest/v1/clipboard_pairings",
+                                          json: ["code": newCode, "wrapped_key": sealed.base64EncodedString()], token: token)
+            pairingCode = newCode
+            pairingStatus = "Enter this code in MicFlow on your other device within 10 minutes."
+            let shown = newCode
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 600_000_000_000)
+                await MainActor.run { if self?.pairingCode == shown { self?.pairingCode = nil; self?.pairingStatus = "" } }
+            }
+        } catch { pairingStatus = "Couldn't make a code: \(error.localizedDescription)" }
+    }
+
+    /// Joins another device using its code (typed or from its QR); false when it isn't valid or has expired.
+    @discardableResult func join(code entered: String) async -> Bool {
+        let clean = Self.normalize(entered)
+        guard clean.count == Self.pairingLength, clean.allSatisfy({ Self.codeAlphabet.contains($0) }),
+              let user = account.user?.id, let token = try? await account.token(),
+              let data = try? await Backend.request("GET", "/rest/v1/clipboard_pairings",
+                                                    query: [URLQueryItem(name: "code", value: "eq.\(clean)"), URLQueryItem(name: "select", value: "wrapped_key"),
+                                                            URLQueryItem(name: "limit", value: "1")], token: token),
+              let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]], let wrapped = rows.first?["wrapped_key"] as? String,
+              let sealed = Data(base64Encoded: wrapped), let box = try? AES.GCM.SealedBox(combined: sealed),
+              let raw = try? AES.GCM.open(box, using: Self.wrapKey(code: clean, user: user)), raw.count == 32 else { return false }
+        setSharedKey(SymmetricKey(data: raw))
+        _ = try? await Backend.request("DELETE", "/rest/v1/clipboard_pairings", query: [URLQueryItem(name: "code", value: "eq.\(clean)")], token: token)
+        pairingCode = nil
+        pairingStatus = "Linked."
+        restart()
+        return true
     }
 
     // MARK: Running
@@ -75,7 +143,7 @@ final class UniversalClipboard: ObservableObject {
     func restart() {
         poll?.invalidate(); poll = nil
         socketTask?.cancel(); socket?.cancel(); socket = nil
-        guard enabled, code != nil else { status = enabled ? "" : "Off"; return }
+        guard enabled, sharedKey != nil else { status = enabled ? "" : "Off"; return }
         lastChange = NSPasteboard.general.changeCount
         poll = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.checkPasteboard() }
@@ -88,6 +156,11 @@ final class UniversalClipboard: ObservableObject {
         guard board.changeCount != lastChange else { return }
         lastChange = board.changeCount
         guard account.isSignedIn else { return }
+        // Words MicFlow typed itself are never sent out, and neither is anything a password manager marked secret.
+        let types = board.types ?? []
+        let skip: Set<String> = ["local.micboost.synthetic-paste", "org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType",
+                                 "com.agilebits.onepassword", "de.keeweb.keeweb"]
+        if types.contains(where: { skip.contains($0.rawValue) }) { return }
         if let images = board.readObjects(forClasses: [NSImage.self]) as? [NSImage], let image = images.first,
            board.string(forType: .string) == nil, let data = Self.imageData(image) {
             Task { await send(kind: "image", data) }
@@ -162,7 +235,15 @@ final class UniversalClipboard: ObservableObject {
                 if let fresh = try? await account.token() { await push("access_token", ["access_token": fresh]) }
             }
         }
-        defer { beat.cancel(); ws.cancel() }
+        // Also checks every 10 seconds, like the phone does: a live connection can go stale (sleep,
+        // network change) without any error, and items sent meanwhile would never be noticed.
+        let poll = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                if let fresh = try? await account.token() { await fetchNew(token: fresh, user: user) }
+            }
+        }
+        defer { beat.cancel(); poll.cancel(); ws.cancel() }
         while !Task.isCancelled {
             guard let message = try? await ws.receive() else { return }
             if case .string(let text) = message, text.contains("\"postgres_changes\""),
@@ -186,9 +267,10 @@ final class UniversalClipboard: ObservableObject {
             ?? ISO8601DateFormatter().date(from: created) {
             lastSeen = ISO8601DateFormatter.withFraction.string(from: date.addingTimeInterval(0.001))
         }
-        guard let key = key(user: user), let text = row["data"] as? String, let sealed = Data(base64Encoded: text),
-              let box = try? AES.GCM.SealedBox(combined: sealed), let plain = try? AES.GCM.open(box, using: key) else {
-            status = "An item couldn't be opened: check both devices use the same code"
+        guard let text = row["data"] as? String, let sealed = Data(base64Encoded: text),
+              let box = try? AES.GCM.SealedBox(combined: sealed),
+              let plain = [key(user: user), legacyKey(user: user)].compactMap({ $0 }).lazy.compactMap({ try? AES.GCM.open(box, using: $0) }).first else {
+            status = "An item couldn't be opened: link this device again from Settings"
             return
         }
         let board = NSPasteboard.general

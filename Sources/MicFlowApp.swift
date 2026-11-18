@@ -28,8 +28,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        InterFont.register()
         MicFlowNotifier.shared.setUp()
         model.clipboard.start()
+        model.windowLayout.start()
+        model.historySync.start()
         MicFlowNotifier.shared.update = { [model] in
             // One click: install the new version (checking first if it isn't known yet).
             if case .available = model.updater.state { model.updater.install() } else { model.updater.check() }
@@ -43,7 +46,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         InstallLocation.cleanUpAfterUpdate()
         InstallLocation.offerMoveIfNeeded()
         #if ADMIN
-        model.account.keySetup.previewIfAsked()
         CleanupSelfTest.runIfAsked()
         #endif
     }
@@ -83,7 +85,6 @@ struct BoostView: View {
         self.model = model
         account = model.account
     }
-    @AppStorage("homeDarkTheme") private var dark = false
 
     private enum Tab: String, CaseIterable {
         case sound = "Sound", voice = "Voice", mouse = "Mouse", keyboard = "Keyboard", figma = "Figma", capture = "Capture"
@@ -103,7 +104,7 @@ struct BoostView: View {
     /// Remembered across launches, so the panel reopens on the last tab used.
     @AppStorage("selectedTab") private var tab = Tab.sound
 
-    private var theme: HomeTheme { dark ? .dark : .green }
+    private var theme: HomeTheme { .green }
 
     /// Voice is hidden while signed out: a remembered Voice tab shows Sound instead.
     private var shownTab: Tab { tab == .voice && !account.showsVoiceTab ? .sound : tab }
@@ -124,8 +125,8 @@ struct BoostView: View {
                     let selected = item == shownTab
                     Button { tab = item } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: item.systemImage).font(.system(size: 13, weight: .bold))
-                            if selected { Text(item.rawValue).font(.system(size: 12, weight: .semibold)) }
+                            Image(systemName: item.systemImage).font(.inter(13, .bold))
+                            if selected { Text(item.rawValue).font(.inter(12, .semibold)) }
                         }
                         .foregroundStyle(selected ? Palette.ink : Palette.white)
                         .frame(height: 34)

@@ -71,7 +71,7 @@ final class MouseButtonController {
     func start() {
         guard timer == nil else { return }
         if !AXIsProcessTrusted() {
-            AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
+            AccessibilityPrompt.askOnce()
         }
         // Re-checks until Accessibility permission is granted.
         timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in self?.update() }

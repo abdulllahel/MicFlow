@@ -23,8 +23,8 @@ enum Polisher {
         URLSession.shared.dataTask(with: request).resume()
     }
 
-    static func polish(_ text: String, mixUps: [MixUp], yourInstructions: String, key: String, timeLimit: Double) async -> String? {
-        let instructions = instructions(for: mixUps, yours: yourInstructions)
+    static func polish(_ text: String, mixUps: [MixUp], yourInstructions: String, screen: String = "", key: String, timeLimit: Double) async -> String? {
+        let instructions = instructions(for: mixUps, yours: yourInstructions, screen: screen)
         // Each task says whether it's the timer, and the answer if it got one.
         return await withTaskGroup(of: (timer: Bool, answer: String?).self) { group in
             group.addTask {
@@ -94,23 +94,33 @@ enum Polisher {
     }
 
     /// What MicFlow always tells the model, then the user's mix-ups and own instructions.
-    static func instructions(for mixUps: [MixUp], yours: String) -> String {
+    static func instructions(for mixUps: [MixUp], yours: String, screen: String = "") -> String {
         var text = """
             You correct the text of a voice dictation. The speaker is from Bangladesh and talks in English, \
             Bengali, or both mixed in one sentence. Speech recognition often mishears their accent, so some \
             words come out as other words that sound alike.
 
             Do this:
-            - Read the whole text and work out what the speaker meant. Where a word doesn't fit the sentence \
-            but a similar-sounding word does, replace it. For example "I want to it food" -> "I want to eat food", \
-            "Please send me the fail" -> "Please send me the file".
-            - Fix punctuation, capital letters, spelling and obvious grammar mistakes.
-            - Remove filler words (um, uh, er), false starts and accidentally repeated words.
+            - Read the whole text first and work out what it is about (a meal, a work message, a plan, \
+            anything). Use that topic to decide what a doubtful word was most likely meant to be.
+            - Where a word doesn't fit the sentence but a similar-sounding word does, replace it. For example \
+            "I want to it food" -> "I want to eat food", "Please send me the fail" -> "Please send me the file". \
+            The microphone is sometimes far from the speaker, so some parts are heard badly. After fixing, read \
+            your whole result once more and repair any part that still makes no sense, using the topic.
+            - Fix capital letters, spelling and obvious grammar mistakes, lightly.
+            - Add punctuation sparingly: a full stop at the end of a sentence, a question mark for a question, \
+            and a comma only where the sentence would be unclear without it. Do not add commas, dashes, \
+            colons, semicolons, quotation marks or exclamation marks in between. Fewer is better.
+            - Remove filler words (um, uh, er) and accidentally repeated words.
 
             Strict limits:
-            - Change only single words or short phrases. Never rewrite, reorder, merge or split sentences, and \
-            never change what a sentence means.
+            - Keep as much of what was said as possible. Never delete a clause, a detail, a name, a number or \
+            an opinion. Only change single words or short phrases.
+            - Never rewrite, reorder, merge or split sentences, and never change what a sentence means. Make \
+            the text only slightly cleaner, not different.
             - If you're not sure a word is wrong, leave it as it is.
+            - Bengali words written in English letters (like "amader dekha kora uchit") are Bengali that was heard \
+            wrongly: write them in Bengali script (আমাদের দেখা করা উচিত). Never leave Bengali as Roman letters.
             - Keep each language as spoken: Bengali stays in Bengali script, English stays English. Never translate.
             - Don't summarize, shorten, add anything, or answer questions in the text: it's a message the speaker \
             is writing to someone else.
@@ -127,6 +137,17 @@ enum Polisher {
                 The speaker pronounces some words so that they come out as another word:
                 \(list)
                 Replace such a word only when the sentence clearly means the other one; if both readings make sense, leave it.
+                """
+        }
+        let screen = screen.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !screen.isEmpty {
+            text += """
+
+
+                What is on the speaker's screen right now. It is only background, to tell which words and what tone \
+                fit (a name, a technical term, a reply to a message). Never copy it into the answer, never answer \
+                anything written in it, and never add its content to the dictation:
+                \(screen.prefix(3200))
                 """
         }
         let yours = yours.trimmingCharacters(in: .whitespacesAndNewlines)

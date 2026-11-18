@@ -63,7 +63,7 @@ final class ScrollController {
     func start() {
         guard permissionTimer == nil else { return }
         if !AXIsProcessTrusted() {
-            AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
+            AccessibilityPrompt.askOnce()
         }
         // Re-checks until Accessibility permission is granted.
         permissionTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in self?.update() }

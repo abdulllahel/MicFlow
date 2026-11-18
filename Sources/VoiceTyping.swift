@@ -32,6 +32,8 @@ final class VoiceTypingModel: ObservableObject {
 
     private enum Keys {
         static let enabled = "voiceTypingEnabled"
+        static let tapToTalk = "voiceTypingTapToTalk"
+        static let livePreview = "voiceTypingLivePreview"
         static let hotkey = "voiceTypingHotkey"
         static let hotkeyName = "voiceTypingHotkeyName"
         static let englishHotkey = "voiceTypingEnglishHotkey"
@@ -43,6 +45,7 @@ final class VoiceTypingModel: ObservableObject {
         static let polish = "voiceTypingPolish"
         static let yourInstructions = "voiceTypingYourInstructions"
         static let instructionsEnabled = "voiceTypingInstructionsEnabled"
+        static let screenContext = "voiceTypingScreenContext"
     }
 
     /// Presses shorter than this are ignored, so tapping a voice key (e.g. Ctrl in a shortcut) does nothing.
@@ -66,6 +69,19 @@ final class VoiceTypingModel: ObservableObject {
         if cachedKey != nil { keyRemovedByYou = false }
         keyFreePlanOff = false
         UserDefaults.standard.removeObject(forKey: "keyFreePlanOff")
+    }
+    /// Press the key once to start and again to stop, instead of holding it while you talk.
+    /// Words the system dictionary doesn't know, with a recording of how you say each.
+    let dictionary = PersonalDictionary()
+    /// The last dictation's sound, kept so a new word can be saved with how it was said.
+    private var lastSamples: [Float] = []
+    private var lastRate: Double = 48_000
+    @Published var tapToTalk: Bool {
+        didSet { defaults.set(tapToTalk, forKey: Keys.tapToTalk) }
+    }
+    /// Show the words in the pill while you talk. On by default.
+    @Published var showLivePreview: Bool {
+        didSet { defaults.set(showLivePreview, forKey: Keys.livePreview) }
     }
     /// Gemini Live's key, and Chrome's Bengali key.
     @Published private(set) var hotkey: Int64
@@ -91,6 +107,13 @@ final class VoiceTypingModel: ObservableObject {
         didSet { defaults.set(fixMixUps, forKey: Keys.fixMixUps) }
     }
     /// Whether clean-up uses your instructions.
+    /// Whether clean-up also gets what's on the screen (read through Accessibility) for context.
+    @Published var screenContext: Bool {
+        didSet { defaults.set(screenContext, forKey: Keys.screenContext) }
+    }
+    /// The screen text read when the key went down; used for this dictation only.
+    private var screenText = ""
+
     @Published var instructionsEnabled: Bool {
         didSet { defaults.set(instructionsEnabled, forKey: Keys.instructionsEnabled) }
     }
@@ -150,11 +173,14 @@ final class VoiceTypingModel: ObservableObject {
 
     init() {
         defaults.register(defaults: [Keys.enabled: false, Keys.hotkey: Int64(kVK_RightControl), Keys.hotkeyName: "Right Ctrl",
-                                     Keys.engine: Engine.geminiLive.rawValue, Keys.fixMixUps: true, Keys.polish: true])
+                                     Keys.engine: Engine.geminiLive.rawValue, Keys.fixMixUps: true, Keys.polish: true,
+                                     Keys.tapToTalk: false, Keys.livePreview: true])
         // Earlier engines: "gemini" (record, then upload) becomes Gemini Live; "whisper" became Chrome.
         let savedEngine = defaults.string(forKey: Keys.engine) ?? ""
         engine = savedEngine == "gemini" ? .geminiLive : savedEngine == "whisper" ? .chrome : Engine(rawValue: savedEngine) ?? .geminiLive
         enabled = defaults.bool(forKey: Keys.enabled)
+        tapToTalk = defaults.bool(forKey: Keys.tapToTalk)
+        showLivePreview = defaults.bool(forKey: Keys.livePreview)
         hotkey = (defaults.object(forKey: Keys.hotkey) as? NSNumber)?.int64Value ?? Int64(kVK_RightControl)
         hotkeyName = defaults.string(forKey: Keys.hotkeyName) ?? "Right Ctrl"
         englishHotkey = (defaults.object(forKey: Keys.englishHotkey) as? NSNumber)?.int64Value
@@ -164,11 +190,18 @@ final class VoiceTypingModel: ObservableObject {
         fixMixUps = defaults.bool(forKey: Keys.fixMixUps)
         polish = defaults.bool(forKey: Keys.polish)
         yourInstructions = defaults.string(forKey: Keys.yourInstructions) ?? ""
+        // Mix-ups were replaced by the personal dictionary: they stop being used.
+        if !defaults.bool(forKey: "mixUpsRetired") { defaults.set(true, forKey: "mixUpsRetired"); fixMixUps = false; defaults.set(false, forKey: Keys.fixMixUps) }
         instructionsEnabled = defaults.object(forKey: Keys.instructionsEnabled) as? Bool ?? true
+        screenContext = defaults.bool(forKey: Keys.screenContext)
         // Both engines use the key for the clean-up.
         loadKeyIfNeeded()
         overlay.level = { [recorder] in recorder.level }
+        overlay.keyName = { [weak self] in self?.hotkeyName ?? "" }
         applyEnabled()
+        dictionary.adopt(myWords)
+        dictionary.addToWordList = { [weak self] in self?.addWord($0) }
+        dictionary.removeFromWordList = { [weak self] in self?.removeWord($0) }
     }
 
     // MARK: Settings
@@ -454,7 +487,7 @@ final class VoiceTypingModel: ObservableObject {
             return
         }
         if !AXIsProcessTrusted() {
-            AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
+            AccessibilityPrompt.askOnce()
         }
         // Re-checks until Accessibility is granted, and notices Chrome's tab connecting or closing.
         permissionTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
@@ -534,6 +567,8 @@ final class VoiceTypingModel: ObservableObject {
     var openHome: () -> Void = {}
 
     private func keyDown(_ key: VoiceKey) {
+        // Tap to talk: the same key, pressed again while listening, ends the dictation.
+        if tapToTalk, phase == .listening, pressedKey == key { finishListening(key); return }
         guard phase == .idle, pressedAt == nil, !isLocked else { return }
         guard isSignedIn() else {
             startProblem("Sign in with Google in MicFlow to start voice typing. It sets everything up for you.")
@@ -571,8 +606,18 @@ final class VoiceTypingModel: ObservableObject {
                 startProblem(error.localizedDescription)
                 return
             }
+            screenText = ""
+            if screenContext {
+                Task.detached { [weak self] in
+                    let text = ScreenContext.capture()
+                    await MainActor.run { self?.screenText = text }
+                }
+            }
             let live = GeminiLiveTranscriber(key: cachedKey, inputRate: recorder.sampleRate)
-            live.onText = { [weak self] text in self?.overlay.show(.listening(text)) }
+            live.onText = { [weak self] text in
+                guard let self, self.showLivePreview else { return }
+                self.overlay.show(.listening(text))
+            }
             self.live = live
             sentSamples = 0
             // Sends what's been recorded every 0.1 s, while the key is held.
@@ -597,6 +642,12 @@ final class VoiceTypingModel: ObservableObject {
     }
 
     private func keyUp(_ key: VoiceKey) {
+        // In tap to talk, letting go does nothing: the next press ends it.
+        guard !tapToTalk else { return }
+        finishListening(key)
+    }
+
+    private func finishListening(_ key: VoiceKey) {
         guard phase == .listening, let pressedAt, pressedKey == key else { return }
         guard Date().timeIntervalSince(pressedAt) >= Self.minimumHold else {
             cancelRecording()
@@ -618,6 +669,8 @@ final class VoiceTypingModel: ObservableObject {
             streamTimer?.invalidate()
             streamTimer = nil
             let all = recorder.stop()
+            lastSamples = all
+            lastRate = recorder.sampleRate
             lastSamples = sentSamples < all.count ? Array(all[sentSamples...]) : []
             self.live = nil
         }
@@ -659,6 +712,7 @@ final class VoiceTypingModel: ObservableObject {
                     guard willPolish, !Task.isCancelled, let cachedKey,
                           let polished = await Polisher.polish(full, mixUps: fixMixUps ? mixUps : [],
                                                                yourInstructions: instructionsEnabled ? yourInstructions : "",
+                                                               screen: screenText,
                                                                key: cachedKey, timeLimit: 2) else { return full }
                     return MyWords.spell(polished, myWords)
                 }
@@ -672,10 +726,12 @@ final class VoiceTypingModel: ObservableObject {
                 pasteStatus.done(statusID)
                 guard !cancelled else {
                     log.add(pasted.text, seconds: heldFor)
+                    dictionary.learn(from: pasted.text, samples: lastSamples, sampleRate: lastRate)
                     return
                 }
                 guard final != pasted.text else {
                     log.add(final, seconds: heldFor)
+                    dictionary.learn(from: final, samples: lastSamples, sampleRate: lastRate)
                     return
                 }
                 let outcome = pasted.replace(with: final, activityNow: activity, dictationNow: dictations)

@@ -2,41 +2,76 @@ import AppKit
 import Carbon.HIToolbox
 import CoreAudio
 import os
+import CryptoKit
+import IOKit
 import Security
 
-/// A secret (an API key or token) kept in the login Keychain rather than in preferences.
+/// A secret (an API key or token) kept in an encrypted file in MicFlow's own folder. It used to live in
+/// the login Keychain, where macOS asked for the Mac password for every secret after every change to
+/// the app. The file is locked to this Mac (the key comes from its hardware ID), readable only by you,
+/// and never asks for a password. Secrets still in the Keychain are moved over the first time.
 struct KeychainSecret {
     /// The Gemini API key, for voice typing.
     static let geminiKey = KeychainSecret(service: "local.micboost.gemini-api-key")
 
     let service: String
 
-    /// Whether a secret is saved, without reading it. Reading the secret itself makes macOS ask for
-    /// permission after every rebuild of the app, so only do that when it's actually used.
+    private var fileURL: URL {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("MicFlow/Secrets", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        return dir.appendingPathComponent(service)
+    }
+
+    private static let key: SymmetricKey = {
+        var id = "unknown-mac"
+        let entry = IORegistryEntryFromPath(kIOMainPortDefault, "IOService:/")
+        if let value = IORegistryEntryCreateCFProperty(entry, "IOPlatformUUID" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? String { id = value }
+        IOObjectRelease(entry)
+        return SymmetricKey(data: SHA256.hash(data: Data(("MicFlow secrets v1|" + id).utf8)))
+    }()
+
+    private var keychainQuery: [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service]
+    }
+
+    /// Whether a secret is saved, without reading it.
     func exists() -> Bool {
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-                                    kSecMatchLimit as String: kSecMatchLimitOne]
+        if FileManager.default.fileExists(atPath: fileURL.path) { return true }
+        var query = keychainQuery
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
         return SecItemCopyMatching(query as CFDictionary, nil) == errSecSuccess
     }
 
     func load() -> String? {
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-                                    kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
+        if let data = try? Data(contentsOf: fileURL), let box = try? AES.GCM.SealedBox(combined: data),
+           let plain = try? AES.GCM.open(box, using: Self.key) {
+            return String(data: plain, encoding: .utf8)
+        }
+        // Old install: read it from the Keychain once (macOS may ask), keep it in the file from now on.
+        var query = keychainQuery
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data,
+              let value = String(data: data, encoding: .utf8) else { return nil }
+        if save(value) { SecItemDelete(keychainQuery as CFDictionary) }
+        return value
     }
 
     @discardableResult
     func save(_ key: String) -> Bool {
-        delete()
-        let item: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-                                   kSecValueData as String: Data(key.utf8)]
-        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
+        guard let sealed = try? AES.GCM.seal(Data(key.utf8), using: Self.key).combined else { return false }
+        do {
+            try sealed.write(to: fileURL, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+            return true
+        } catch { return false }
     }
 
     func delete() {
-        SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service] as CFDictionary)
+        try? FileManager.default.removeItem(at: fileURL)
+        SecItemDelete(keychainQuery as CFDictionary)
     }
 }
 
@@ -118,17 +153,41 @@ enum GeminiClient {
         var errorDescription: String? { message }
     }
 
-    /// Succeeds when Google accepts the key.
+    /// Succeeds when Google accepts the key and the voice model is available to it. A key that isn't
+    /// accepted gets the exact reason and what to do about it.
     static func check(key: String) async throws {
-        var request = URLRequest(url: URL(string: "\(base)/models?pageSize=1")!)
+        let live = "gemini-3.5-transcribe-live"
+        var request = URLRequest(url: URL(string: "\(base)/models/\(live)")!)
+        request.timeoutInterval = 20
         request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+        let data: Data, response: URLResponse
+        do { (data, response) = try await URLSession.shared.data(for: request) }
+        catch { throw Failure(message: "MicFlow couldn't reach Google. Check your internet connection and try again.") }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else {
             let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-            let message = (json?["error"] as? [String: Any])?["message"] as? String
-            throw Failure(message: ProviderName.hide(message ?? "This key wasn't accepted."))
+            let message = (json?["error"] as? [String: Any])?["message"] as? String ?? ""
+            throw Failure(message: friendly(status: status, message: message))
         }
         try await checkFreePlan(key: key)
+    }
+
+    /// What went wrong, in plain words, and a fix.
+    static func friendly(status: Int, message: String) -> String {
+        let lower = message.lowercased()
+        if lower.contains("api key not valid") || lower.contains("api_key_invalid") || status == 400 {
+            return "Google says this isn't a valid API key. Copy it again from your key provider: it starts with “AIza” and has no spaces."
+        }
+        if ProviderName.isFreePlanOff(message) { return ProviderName.freePlanOff }
+        if status == 401 || status == 403 {
+            return "Google refused this key (\(status)). On your key provider's page, make a new key in a new project, and check the account isn't restricted."
+        }
+        if status == 404 {
+            return "Your key works, but it can't use the voice model yet. This can depend on your country or account. Make a new key in a new project and try again later."
+        }
+        if status == 429 { return "Google says this key has used its free quota for now. Wait a few minutes and try again, or use another project's key." }
+        if status >= 500 { return "Google is busy right now. Try again in a minute." }
+        return ProviderName.hide(message.isEmpty ? "This key wasn't accepted (error \(status))." : message)
     }
 
     /// Google can switch off the free plan for a whole account; its keys then list models fine but

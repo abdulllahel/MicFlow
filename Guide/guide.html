@@ -98,13 +98,11 @@
     For the voice key (hold a key and talk), MicFlow needs <b>Accessibility</b>: open <b>System Settings › Privacy &amp; Security › Accessibility</b> and turn on <b>MicFlow</b>. MicFlow shows a button that opens this page for you.</div></div>
   <div class="note"><b>Keychain question?</b> If macOS asks whether MicFlow may use its saved items in your Keychain (for example after an update), enter your password and click <b>Always Allow</b>. That's where MicFlow keeps your sign-in and your key.</div>
 
-  <h3>Sign in and start voice typing</h3>
+  <h3>Add your API key and start voice typing</h3>
   <div class="step"><div class="num">10</div><div class="body">
-    On Home, click <b>Sign in with Google</b>. Signing in turns on voice typing, makes your free voice key for you, and saves your settings to your account.
-    <img src="img/home-setup.jpg"></div></div>
+    On Home, MicFlow asks for your free API key. Click <b>Create API key</b>: it opens the key provider's page. Sign in if it asks, click <b>Create API key</b> there, and copy the key.</div></div>
   <div class="step"><div class="num">11</div><div class="body">
-    MicFlow first shows three short slides about Google's screens; click <b>Next</b> through them, then <b>Continue with Google</b>. The same steps are explained below in section 3.
-    <img class="phone" src="img/key-guide.jpg"></div></div>
+    Come back to MicFlow, paste the key into the box and click <b>Save</b>. MicFlow checks the key first. Signing in with Google is optional: it saves your settings to your account. The steps are also explained below in section 3.</div></div>
   <div class="step"><div class="num">12</div><div class="body">
     When it's done, Home shows your dashboard. Hold your voice key (Right Ctrl unless you changed it), talk, and let go: your words are typed where your cursor is.
     <img src="img/mac_home.jpg"></div></div>
@@ -164,47 +162,25 @@
 
 <!-- ======================= TROUBLESHOOTING ======================= -->
 <section class="part">
-  <div class="banner"><h2>3 &middot; Signing in and your voice key</h2>
-    <p>What Google shows while MicFlow makes your free key, and what to do when something goes wrong. The same on Mac and Android.</p></div>
+  <div class="banner"><h2>3 &middot; Your API key and signing in</h2>
+    <p>How to get your free voice key, and what to do when something goes wrong. The same on Mac, Android and Windows.</p></div>
 
-  <h3>The screens you'll see</h3>
-  <div class="step"><div class="num">1</div><div class="body"><b>"Google hasn't verified this app"</b>. Google's review of MicFlow isn't finished yet. Tap <b>Advanced</b>, then <b>Go to … (unsafe)</b>. MicFlow only uses this access to make your key.
-    <img src="img/Guide-Advanced.jpg"></div></div>
-  <div class="step"><div class="num">2</div><div class="body"><b>Tick the Google Cloud box.</b> This is the important one: without the tick MicFlow can't make your key. Then tap <b>Continue</b>.
-    <img src="img/Guide-Tick.jpg"></div></div>
-  <div class="step"><div class="num">3</div><div class="body"><b>Accept Google's terms</b>, only once per account: one or two pages (the <i>Google APIs Terms of Service</i>, then the voice model's terms). MicFlow opens each page for you in the right account, ticks them off as you go, and notices by itself; if it doesn't, tap <b>I've accepted</b>.
-    <img class="phone" src="img/Guide-Accept.jpg"></div></div>
+  <h3>Getting your key</h3>
+  <div class="step"><div class="num">1</div><div class="body"><b>Open the key provider.</b> Click <b>Create API key</b> in MicFlow. Sign in on the provider's page if it asks.</div></div>
+  <div class="step"><div class="num">2</div><div class="body"><b>Create a key.</b> Click <b>Create API key</b> on that page, pick any project (or let it make one), then confirm.</div></div>
+  <div class="step"><div class="num">3</div><div class="body"><b>Copy it and paste it into MicFlow</b>, then click <b>Save</b>. MicFlow checks the key before saving it.</div></div>
 
   <h3>Problems and fixes</h3>
-  <div class="problem"><h3>"The Google Cloud box wasn't ticked"</h3>
-    <p>You continued without ticking the box on Google's permission screen. Tap <b>Try again</b> and tick it this time.</p></div>
-
-  <div class="problem"><h3>The terms page says "already been accepted", but MicFlow keeps waiting</h3>
-    <p>The page opened in a different Google account than the one you signed in with. Tap your picture at the top right of the page, switch to the account MicFlow shows, and accept there.</p>
-    <img src="img/Guide-OtherAccount.jpg"></div>
-
-  <div class="problem"><h3>"This Google account can't get a voice key yet"</h3>
-    <p>Google decides which accounts get the free key, partly from how the account has been used. Google's own words:</p>
-    <img src="img/Guide-GoogleNote.jpg">
-    <p><b>What we found:</b> Google accounts that hadn't been used for a long time couldn't get a key. After using them normally for a day (Gmail, YouTube, search), Google let them make one. Brand-new accounts are often refused at first too.</p>
-    <p><b>What to do:</b></p>
-    <ul>
-      <li>Try again with a Google account you use every day. On Google's screen, pick that account (Google shows its account list each time).</li>
-      <li>Or use the refused account normally for a while and try again in a few hours or tomorrow.</li>
-      <li>Or, if you made a new account just for this, use it for a day first, then try again.</li>
-      <li>Or paste a key of your own (below).</li>
-    </ul></div>
+  <div class="problem"><h3>"That key didn't work"</h3>
+    <p>Copy the key again from the key provider's page: it starts with <b>AIza</b> and has no spaces. If it still fails, make a new key in a new project.</p></div>
 
   <div class="problem"><h3>"Your key needs replacing"</h3>
-    <p>Google stopped accepting the key from the account it was made in (its free plan was turned off). Set it up again, preferably with a Google account you use regularly, or paste a key of your own.</p></div>
+    <p>The provider stopped accepting your key. Create a new key and paste it into MicFlow.</p></div>
 
-  <div class="problem"><h3>Paste a key of your own</h3>
-    <p>Shown after Google wouldn't make a key. Open the key page (MicFlow has a button for it), sign in, tap <b>Create API key</b>, copy it, paste it into MicFlow and tap <b>Save</b>. MicFlow checks it before saving. A key made in an account whose free plan is off won't work either; MicFlow will tell you.</p></div>
+  <div class="problem"><h3>"You closed Google's sign-in before it finished"</h3>
+    <p>Signing in is optional and only saves your settings to your account. Click <b>Sign in with Google</b> and try again.</p></div>
 
-  <div class="problem"><h3>"You closed Google's sign-in before it finished" / "Sign-in stopped on Google's screen"</h3>
-    <p>The browser window was closed, or <b>Back to safety</b> was tapped on the warning screen. Sign in again and follow the three screens above.</p></div>
-
-  <div class="problem"><h3>"MicFlow couldn't reach Google"</h3>
+  <div class="problem"><h3>"MicFlow couldn't reach the internet"</h3>
     <p>Check your internet connection and try again.</p></div>
 
   <div class="problem"><h3>Your key and settings on a new device</h3>

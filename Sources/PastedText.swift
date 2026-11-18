@@ -66,6 +66,8 @@ struct PastedText {
         }
         guard activityNow == activity, text.unicodeScalars.allSatisfy({ $0.value < 0x0900 }) else { return .kept }
         Self.press(kVK_Delete, times: text.count)
+        // Lets the app work through the backspaces before the paste arrives (Chrome and Electron apps otherwise paste early).
+        usleep(UInt32(min(60_000, 12_000 + text.count * 400)))
         Self.paste(polished)
         return .retyped
     }
@@ -148,6 +150,8 @@ struct PastedText {
     static func paste(_ text: String) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
+        // Marks the clipboard as MicFlow's own, so Universal Clipboard doesn't send dictated words to other devices.
+        pasteboard.setString("1", forType: NSPasteboard.PasteboardType("local.micboost.synthetic-paste"))
         pasteboard.setString(text, forType: .string)
         press(kVK_ANSI_V, flags: .maskCommand)
     }

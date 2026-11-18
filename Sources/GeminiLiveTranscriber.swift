@@ -24,6 +24,7 @@ final class GeminiLiveTranscriber: LiveTranscriber {
 
     // Finished segments, and the server's current guess at the one being spoken.
     private var finals = ""
+    private var segments: [String] = []
     private var interim = ""
     private var ended = false
     private var finalAfterEnd = false
@@ -136,7 +137,19 @@ final class GeminiLiveTranscriber: LiveTranscriber {
         }
         guard let content = json["serverContent"] as? [String: Any] else { return }
         if let final = (content["inputTranscription"] as? [String: Any])?["text"] as? String, !final.isEmpty {
-            finals = Self.join(finals, final)
+            // The server can repeat a finished segment, or resend it with more words on the end: each part
+            // is written down once.
+            let norm = { (t: String) in t.lowercased().filter { $0.isLetter || $0.isNumber } }
+            let new = norm(final)
+            Self.logSegment(final)
+            if new.isEmpty {
+                segments.append(final)
+            } else if let last = segments.last, new.hasPrefix(norm(last)), norm(last).count > 3 {
+                segments[segments.count - 1] = final
+            } else if !segments.suffix(4).contains(where: { norm($0) == new }), !(norm(finals).hasSuffix(new) && new.count > 8) {
+                segments.append(final)
+            }
+            finals = segments.reduce("") { Self.join($0, $1) }
             interim = ""
             speechSinceFinal = false
             if ended { finalAfterEnd = true }
@@ -147,6 +160,18 @@ final class GeminiLiveTranscriber: LiveTranscriber {
             onText(text)
         }
         if ended, content["turnComplete"] as? Bool == true { turnComplete = true }
+    }
+
+    /// The last dictation's raw segments, kept in a small file so a repeated sentence can be traced.
+    private static func logSegment(_ text: String) {
+        // Only in debug builds: spoken words are never written to disk in the released app.
+        #if DEBUG
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("MicFlow")
+        let url = dir.appendingPathComponent("last-segments.txt")
+        let line = "\(Date()): \(text)\n"
+        if let handle = try? FileHandle(forWritingTo: url) { handle.seekToEndOfFile(); handle.write(Data(line.utf8)); try? handle.close() }
+        else { try? line.write(to: url, atomically: true, encoding: .utf8) }
+        #endif
     }
 
     private func fail(_ error: LiveTranscriptionFailure) {

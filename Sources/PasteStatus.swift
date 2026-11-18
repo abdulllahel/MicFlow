@@ -98,12 +98,14 @@ final class PasteStatus {
             panel.hasShadow = false
             panel.ignoresMouseEvents = true
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.hidesOnDeactivate = false
             panel.contentView = NSHostingView(rootView: PasteStatusView(state: state))
             return panel
         }()
         self.panel = panel
-        if let screen = NSScreen.main {
-            panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - size.width / 2, y: screen.visibleFrame.minY + 52))
+        do {
+            let screen = NSScreen.underPointer
+            panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - size.width / 2, y: screen.frame.minY + 6))
         }
         panel.orderFrontRegardless()
     }
@@ -137,7 +139,7 @@ private struct PasteStatusView: View {
                 pill {
                     ProgressView().controlSize(.mini).tint(.white)
                     Text("Further polishing… Press")
-                    Text("ESC").font(.system(size: 11, weight: .heavy))
+                    Text("ESC").font(.inter(11, .heavy))
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Color.white.opacity(0.22), in: RoundedRectangle(cornerRadius: 5))
                     Text("to cancel")
@@ -150,7 +152,7 @@ private struct PasteStatusView: View {
 
     private func pill<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         HStack(spacing: 6) { content() }
-            .font(.system(size: 12, weight: .medium))
+            .font(.inter(12, .medium))
             .foregroundStyle(.white)
             .padding(.horizontal, 12).padding(.vertical, 7)
             .background(Capsule().fill(Color.black.opacity(0.85)))

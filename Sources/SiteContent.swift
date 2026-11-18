@@ -100,7 +100,8 @@ final class SiteContentStore: ObservableObject {
     nonisolated static let repository = "abdulllahel/MicFlow"
     nonisolated static let branch = "main"
     nonisolated static let folder = "content"
-    nonisolated static let rawBase = URL(string: "https://raw.githubusercontent.com/\(repository)/\(branch)/\(folder)/")!
+    /// About, What's New and notices come from the website, so the source code stays private.
+    nonisolated static let rawBase = URL(string: "https://micflow.abdullahel.com/\(folder)/")!
 
     @Published private(set) var content: SiteContent
     @Published private(set) var isLoading = false

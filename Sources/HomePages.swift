@@ -31,12 +31,12 @@ struct HeroCard<Actions: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: compact ? 9 : 12) {
             HStack {
-                Text(kicker).font(.system(size: 11, weight: .semibold))
+                Text(kicker).font(.inter(11, .semibold))
                 Spacer()
                 if let chip {
                     HStack(spacing: 5) {
                         Circle().fill(Palette.pink).frame(width: 7, height: 7)
-                        Text(chip).font(.system(size: 11, weight: .bold))
+                        Text(chip).font(.inter(11, .bold))
                     }
                     .padding(.horizontal, 10).padding(.vertical, 5)
                     .background(Palette.white, in: Capsule())
@@ -45,16 +45,17 @@ struct HeroCard<Actions: View>: View {
             Text(title).font(.display(compact ? 21 : 28)).fixedSize(horizontal: false, vertical: true)
                 .padding(.trailing, compact ? 54 : 0)
             if let detail, !detail.isEmpty {
-                Text(detail).font(.system(size: compact ? 12 : 13, weight: .medium)).opacity(0.75)
+                Text(detail).font(.inter(compact ? 12 : 13, .medium)).opacity(0.75)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.trailing, compact ? 54 : 90)
             }
             HStack(spacing: 14) { actions }
         }
-        .foregroundStyle(Palette.ink)
+        .foregroundStyle(Palette.heroInk)
         .padding(compact ? 16 : 20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Palette.yellow, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(Palette.hero, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.white.opacity(0.18)))
         .overlay(alignment: .bottomTrailing) {
             PageSticker(systemImage: systemImage).scaleEffect(compact ? 0.7 : 1)
                 .padding(.trailing, compact ? 10 : 26).padding(.bottom, compact ? 8 : 14)
@@ -70,7 +71,7 @@ struct PageSticker: View {
         RoundedRectangle(cornerRadius: 14, style: .continuous)
             .fill(Palette.pink)
             .frame(width: 70, height: 62)
-            .overlay(Image(systemName: systemImage).font(.system(size: 24, weight: .bold)).foregroundStyle(Palette.cream))
+            .overlay(Image(systemName: systemImage).font(.inter(24, .bold)).foregroundStyle(Palette.cream))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Palette.white, lineWidth: 3))
             .rotationEffect(.degrees(-10))
     }
@@ -91,10 +92,10 @@ struct FeatureCard<Content: View>: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
                     Circle().fill(Palette.cream).frame(width: 32, height: 32)
-                        .overlay(Image(systemName: systemImage).font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.pink))
+                        .overlay(Image(systemName: systemImage).font(.inter(13, .bold)).foregroundStyle(Palette.pink))
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(title).font(.system(size: 14, weight: .semibold))
-                        if let subtitle { Text(subtitle).font(.system(size: 11)).foregroundStyle(Palette.greyOnDark) }
+                        Text(title).font(.inter(14, .semibold))
+                        if let subtitle { Text(subtitle).font(.inter(11)).foregroundStyle(Palette.greyOnDark) }
                     }
                     Spacer()
                     if let isOn { PinkSwitch(isOn: isOn) }
@@ -136,9 +137,9 @@ struct CreamSlider: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(title).font(.system(size: 13))
+                Text(title).font(.inter(13))
                 Spacer()
-                Text(valueText).font(.system(size: 13, weight: .bold)).monospacedDigit()
+                Text(valueText).font(.inter(13, .bold)).monospacedDigit()
             }
             GeometryReader { geo in
                 let fraction = (value - range.lowerBound) / (range.upperBound - range.lowerBound)
@@ -165,7 +166,7 @@ struct CreamSlider: View {
                     Spacer()
                     Text(highLabel ?? "")
                 }
-                .font(.system(size: 10)).foregroundStyle(Palette.greyOnDark)
+                .font(.inter(10)).foregroundStyle(Palette.greyOnDark)
             }
         }
     }
@@ -193,17 +194,17 @@ struct PillMenu<Value: Hashable>: View {
 
     var body: some View {
         HStack {
-            if let label { Text(label).font(.system(size: 13)); Spacer() }
+            if let label { Text(label).font(.inter(13)); Spacer() }
             Button { open = true } label: {
                 HStack(spacing: 8) {
-                    Text(options.first { $0.value == selection }?.title ?? "Choose").font(.system(size: 13, weight: .semibold))
+                    Text(options.first { $0.value == selection }?.title ?? "Choose").font(.inter(13, .semibold))
                         .lineLimit(1)
                     Spacer(minLength: 4)
-                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 10, weight: .bold))
+                    Image(systemName: "chevron.up.chevron.down").font(.inter(10, .bold))
                 }
                 .padding(.horizontal, 14).padding(.vertical, 8)
                 .frame(maxWidth: label == nil ? .infinity : compact ? 170 : 230)
-                .background(onDark ? Color.white.opacity(0.08) : Color(hex: 0xF2F2F0), in: Capsule())
+                .background(Color.white.opacity(0.08), in: Capsule())
                 .overlay(Capsule().strokeBorder(onDark ? Color.white.opacity(0.14) : Color.black.opacity(0.06)))
                 .contentShape(Capsule())
             }
@@ -271,9 +272,9 @@ struct CheckRow: View {
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
                     .fill(isOn ? Palette.pink : .clear)
                     .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(isOn ? .clear : Color.white.opacity(0.35), lineWidth: 1.5))
-                    .overlay(Image(systemName: "checkmark").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white).opacity(isOn ? 1 : 0))
+                    .overlay(Image(systemName: "checkmark").font(.inter(10, .heavy)).foregroundStyle(.white).opacity(isOn ? 1 : 0))
                     .frame(width: 18, height: 18)
-                Text(title).font(.system(size: 13)).multilineTextAlignment(.leading)
+                Text(title).font(.inter(13)).multilineTextAlignment(.leading)
                 Spacer(minLength: 0)
             }
             .contentShape(Rectangle())
@@ -293,7 +294,7 @@ struct Note: View {
                 if isError { Image(systemName: "exclamationmark.circle.fill").foregroundStyle(Palette.pink) }
                 Text(text).fixedSize(horizontal: false, vertical: true)
             }
-            .font(.system(size: 12))
+            .font(.inter(12))
             .foregroundStyle(isError ? Palette.pink : Palette.greyOnDark)
         }
     }
@@ -313,7 +314,7 @@ struct PillButton: View {
                 if let systemImage { Image(systemName: systemImage) }
                 Text(title)
             }
-            .font(.system(size: 12, weight: .semibold))
+            .font(.inter(12, .semibold))
             .foregroundStyle(foreground)
             .padding(.horizontal, 14).padding(.vertical, 8)
             .background(background, in: Capsule())
@@ -372,10 +373,10 @@ struct PillField: View {
             }
         }
         .textFieldStyle(.plain)
-        .font(.system(size: 13))
+        .font(.inter(13))
         .onSubmit(onSubmit)
         .padding(.horizontal, 14).padding(.vertical, 9)
-        .background(onDark ? Color.white.opacity(0.08) : Color(hex: 0xF2F2F0), in: Capsule())
+        .background(Color.white.opacity(0.08), in: Capsule())
         .overlay(Capsule().strokeBorder(onDark ? Color.white.opacity(0.12) : .clear))
     }
 }
@@ -420,11 +421,12 @@ struct WhitePanel<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) { content }
-            .foregroundStyle(Palette.ink)
+            .foregroundStyle(Palette.panelText)
             .padding(22)
             .frame(maxWidth: .infinity, alignment: .topLeading)
-            .background(Palette.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .environment(\.colorScheme, .light)
+            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Palette.hair))
+            .environment(\.colorScheme, .dark)
     }
 }
 
@@ -443,13 +445,17 @@ struct SoundPage: View {
                     PillButton(title: "Microphone Privacy…", style: .ink, action: model.openMicPrivacySettings)
                 }
             }
+            if model.helpersMissing { SoundHelperCard(installer: model.soundHelpers, theme: theme) }
             CardColumns {
                 FeatureCard(theme: theme, systemImage: "mic.fill", title: "Microphone", subtitle: "Boost it in all apps too",
                             isOn: $model.enabled) {
                     PillMenu(selection: Binding(get: { model.selectedMic?.uid ?? "" }, set: { model.selectedMicUID = $0 }),
                              options: model.micDevices.map { ($0.uid, $0.name) })
-                    CreamSlider(title: "Boost", value: $model.gainDB, range: 0...BoostModel.maxGainDB, step: 0.5,
+                    CreamSlider(title: "Boost", value: $model.gainDB, range: 0...BoostModel.maxGainDB, step: 0.2,
                                 valueText: String(format: "+%.1f dB · %.1f×", model.gainDB, Double(BoostModel.linear(model.gainDB))))
+                    if model.gainDB > 30 {
+                        Note(text: "Above 32× the sound can turn harsh. If it crackles, turn the boost back down.", isError: true)
+                    }
                     CreamMeter(engine: model.micEngine, active: model.isRunning)
                     Note(text: model.status, isError: model.statusIsError)
                     CheckRow(title: "Set microphone hardware level to 100%", isOn: $model.maxHardwareVolume)
@@ -460,8 +466,11 @@ struct SoundPage: View {
                             isOn: $model.speakerEnabled) {
                     PillMenu(selection: Binding(get: { model.selectedSpeaker?.uid ?? "" }, set: { model.selectedSpeakerUID = $0 }),
                              options: model.speakerDevices.map { ($0.uid, $0.name) })
-                    CreamSlider(title: "Boost", value: $model.speakerGainDB, range: 0...BoostModel.maxGainDB, step: 0.5,
+                    CreamSlider(title: "Boost", value: $model.speakerGainDB, range: 0...BoostModel.maxGainDB, step: 0.2,
                                 valueText: String(format: "+%.1f dB · %.1f×", model.speakerGainDB, Double(BoostModel.linear(model.speakerGainDB))))
+                    if model.speakerGainDB > 30 {
+                        Note(text: "Above 32× it is very loud and can damage speakers or your ears. Start low, especially with headphones.", isError: true)
+                    }
                     CreamMeter(engine: model.speakerEngine, active: model.speakerRunning)
                     Note(text: model.speakerStatus, isError: model.speakerStatusIsError)
                     Note(text: "Your volume keys still work as usual. With headphones, start low.")
@@ -504,7 +513,9 @@ struct VoicePage: View {
             CardColumns {
                 FeatureCard(theme: theme, systemImage: "waveform", title: "Voice typing", subtitle: "Typed wherever your cursor is",
                             isOn: $voice.enabled) {
-                    Text("Engine").font(.system(size: 13))
+                    CheckRow(title: "Tap once to start and again to stop (instead of holding the key)", isOn: $voice.tapToTalk)
+                    CheckRow(title: "Show my words while I talk", isOn: $voice.showLivePreview)
+                    Text("Engine").font(.inter(13))
                     HStack(spacing: 6) {
                         ForEach(VoiceTypingModel.Engine.allCases) { engine in
                             Pill(title: engine.title, selected: voice.engine == engine) { voice.engine = engine }
@@ -515,7 +526,7 @@ struct VoicePage: View {
                     } else {
                         Note(text: "Free, and needs no API key. It runs with Chrome speech recognition, so it needs Google Chrome installed: keep the \"MicFlow: voice typing\" tab open. Text comes without punctuation. If you close the Chrome tab, voice typing won't work.")
                         Text("It needs two different shortcut keys, one to type English and one for Bangla. It can't detect English and Bangla at the same time.")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.inter(12, .semibold))
                             .foregroundStyle(Palette.ink)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.horizontal, 10).padding(.vertical, 8)
@@ -542,28 +553,18 @@ struct VoicePage: View {
                     FeatureCard(theme: theme, systemImage: "key.fill", title: "API key", subtitle: "Kept in your Mac's Keychain") {
                         if voice.hasKey {
                             HStack {
-                                Label("Saved in your Keychain", systemImage: "checkmark.seal.fill").font(.system(size: 13, weight: .semibold))
+                                Label("Saved in your Keychain", systemImage: "checkmark.seal.fill").font(.inter(13, .semibold))
                                     .foregroundStyle(Palette.cream)
                                 Spacer()
                                 PillButton(title: "Remove", style: .outline, action: voice.removeKey)
                             }
-                            #if ADMIN
-                            // Admin only: tries automatic setup even with a key saved (the old key keeps working).
-                            if let account, account.isConfigured {
-                                KeySetupButton(account: account, title: "Test: make a new key with Google")
-                            }
-                            #endif
                         } else {
-                            if let account, account.isConfigured {
-                                KeySetupButton(account: account)
-                                Text("or paste a key").font(.system(size: 11)).foregroundStyle(Palette.greyOnDark)
-                            }
                             HStack {
                                 PillField(placeholder: "Paste your key", text: $keyDraft, secure: true, onSubmit: save)
                                 PillButton(title: "Save", style: .cream, action: save)
                             }
                             Link("Get a free key", destination: URL(string: "https://aistudio.google.com/apikey")!)
-                                .font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.cream)
+                                .font(.inter(12, .semibold)).foregroundStyle(Palette.cream)
                         }
                         Note(text: "On the free plan, the provider of this model may use what you say to improve their products, and people may review it, so don't dictate anything sensitive.")
                     }
@@ -581,13 +582,15 @@ struct VoicePage: View {
 
     private func keyRow(_ title: String, key: VoiceTypingModel.VoiceKey, name: String?) -> some View {
         HStack {
-            Text(title).font(.system(size: 13))
+            Text(title).font(.inter(13))
             Spacer()
             if voice.capturing == key {
-                Text("Press a key…").font(.system(size: 12)).foregroundStyle(Palette.greyOnDark)
+                Text("Press a key…").font(.inter(12)).foregroundStyle(Palette.greyOnDark)
                 PillButton(title: "Cancel", style: .outline, action: voice.cancelCapture)
             } else {
-                PillButton(title: name ?? "Choose a key", systemImage: "command", style: .cream) { voice.captureHotkey(key) }
+                Text(name ?? "No key").font(.inter(13, .bold)).foregroundStyle(Palette.ink)
+                    .padding(.horizontal, 14).padding(.vertical, 8).background(Palette.cream, in: Capsule())
+                PillButton(title: "Edit shortcut", style: .outline) { voice.captureHotkey(key) }
             }
         }
     }
@@ -609,9 +612,9 @@ struct WordChips: View {
         FlowLayout(spacing: 6) {
             ForEach(words, id: \.self) { word in
                 HStack(spacing: 6) {
-                    Text(word).font(.system(size: 13, weight: .semibold))
+                    Text(word).font(.inter(13, .semibold))
                     if let remove {
-                        Button { remove(word) } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .heavy)) }
+                        Button { remove(word) } label: { Image(systemName: "xmark").font(.inter(9, .heavy)) }
                             .buttonStyle(.plain)
                             .help("Remove \(word)")
                     }
@@ -667,16 +670,20 @@ struct DictionaryPage: View {
     var body: some View {
         PageBody {
             HeroCard(kicker: "Preferences", title: "MicFlow, tuned to how you talk",
-                     detail: "Tell clean-up about yourself, and add the words a normal dictionary doesn't know: brand names, industry jargon, local words, even made-up ones.",
-                     chip: "\(voice.myWords.count) words", systemImage: "slider.horizontal.3") {
+                     detail: "Tell clean-up about yourself. MicFlow keeps a personal dictionary of the words a normal dictionary doesn't know: brand names, jargon, local words, even made-up ones.",
+                     chip: "\(voice.dictionary.entries.count) words", systemImage: "slider.horizontal.3") {
                 EmptyView()
+            }
+            FeatureCard(theme: theme, systemImage: "text.viewfinder", title: "Read my screen for context",
+                        subtitle: "Clean-up sees the window you're typing in", isOn: $voice.screenContext) {
+                Note(text: "When you dictate, MicFlow reads the visible text of the front window (never password boxes) so clean-up picks the right names, terms and tone, like replying to a message. It goes to Google with your key, for that one clean-up only, and nothing is saved. Off by default.")
             }
             FeatureCard(theme: theme, systemImage: "person.text.rectangle.fill", title: "Your instructions",
                         subtitle: "Who you are and how you write, for clean-up", isOn: $voice.instructionsEnabled) {
                 TextField("For example: I'm a UX designer, so I talk about Figma, wireframes, user flows and design systems. I write to clients, so keep a polite tone. My name is spelled Abdullah.",
                           text: $voice.yourInstructions, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(.inter(13))
                     .lineLimit(4...8)
                     .padding(.horizontal, 14).padding(.vertical, 10)
                     .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
@@ -685,54 +692,7 @@ struct DictionaryPage: View {
                     .opacity(voice.instructionsEnabled ? 1 : 0.5)
                 Note(text: "Clean-up uses this to understand your words: a designer's \"wireframe\" or an artist's \"gouache\". It's added after MicFlow's own rules, which always come first: change only misheard words, never whole sentences, and answer fast. Keep it short; up to 2,000 characters are used.")
             }
-            (compact ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(alignment: .top, spacing: 10))) {
-                WhitePanel {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("My words").font(.display(24))
-                        Text("brands, jargon, local and made-up words").font(.system(size: 12)).foregroundStyle(Palette.greyOnLight)
-                        Spacer()
-                    }
-                    if voice.myWords.isEmpty {
-                        Text("No words yet. Add words a normal dictionary doesn't know, like your brand, product or team names, or words your community uses.").font(.system(size: 13))
-                            .foregroundStyle(Palette.greyOnLight)
-                    } else {
-                        WordChips(words: voice.myWords, remove: voice.removeWord)
-                    }
-                    HStack {
-                        PillField(placeholder: "Add a word", text: $newWord, onDark: false, onSubmit: addWord)
-                        PillButton(title: "Add word", systemImage: "plus", style: .yellow, action: addWord)
-                    }
-                }
-                FeatureCard(theme: theme, systemImage: "arrow.triangle.swap", title: "Mix-ups",
-                            subtitle: "Fixed only where the sentence means it", isOn: $voice.fixMixUps) {
-                    ForEach(voice.mixUps) { mixUp in
-                        HStack(alignment: .top) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                HStack(spacing: 6) {
-                                    Text(mixUp.heard).font(.system(size: 13, weight: .bold))
-                                    Image(systemName: "arrow.right").font(.system(size: 10, weight: .bold)).foregroundStyle(Palette.pink)
-                                    Text(mixUp.meant).font(.system(size: 13, weight: .bold))
-                                }
-                                if !mixUp.meaning.isEmpty { Note(text: mixUp.meaning) }
-                            }
-                            Spacer()
-                            Button { voice.removeMixUp(mixUp) } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .heavy)) }
-                                .buttonStyle(.plain).help("Remove this mix-up")
-                        }
-                        .padding(12)
-                        .background(theme.selected, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    }
-                    HStack(spacing: 6) {
-                        PillField(placeholder: "Comes out as", text: $heard)
-                        Image(systemName: "arrow.right").foregroundStyle(Palette.greyOnDark)
-                        PillField(placeholder: "I meant", text: $meant)
-                    }
-                    PillField(placeholder: "Meaning (optional), e.g. the globe", text: $meaning, onSubmit: addMixUp)
-                    PillButton(title: "Add mix-up", systemImage: "plus", style: .cream, action: addMixUp)
-                    Note(text: "Clean-up fixes them only where the sentence means the other word.")
-                }
-                .frame(width: compact ? nil : 380)
-            }
+            PersonalDictionaryPanel(dictionary: voice.dictionary)
         }
     }
 
@@ -779,6 +739,9 @@ struct MousePage: View {
                                 valueText: model.trackingSpeed == TrackingSpeedController.macOSFast ? "macOS Fast"
                                     : String(format: "+%.0f%%", (model.trackingSpeed / TrackingSpeedController.macOSFast - 1) * 100),
                                 lowLabel: "macOS Fast", highLabel: "Faster")
+                    if model.trackingSpeed > TrackingSpeedController.comfortable {
+                        Note(text: "Too fast: past this point the pointer becomes very hard to control. Turn it back unless you really need it.", isError: true)
+                    }
                     switch model.trackingState {
                     case .running: Note(text: "Move it a step or two at a time.")
                     case .noMouse: Note(text: "No mouse found.", isError: true)
@@ -811,14 +774,15 @@ struct MousePage: View {
                                     .buttonStyle(.plain).help("Choose the keys")
                             }
                             Button { model.removeMouseButton(mapping.button) } label: {
-                                Image(systemName: "xmark").font(.system(size: 10, weight: .heavy))
+                                Image(systemName: "minus.circle.fill").font(.inter(20)).foregroundStyle(Palette.orange)
+                                    .frame(width: 30, height: 30).contentShape(Circle())
                             }
-                            .buttonStyle(.plain).help("Remove this button")
+                            .buttonStyle(.plain).help("Remove this button's action").accessibilityLabel("Remove this button's action")
                         }
                     }
                     HStack {
                         if model.waitingForButton {
-                            Text("Press the mouse button you want to set up…").font(.system(size: 12)).foregroundStyle(Palette.cream)
+                            Text("Press the mouse button you want to set up…").font(.inter(12)).foregroundStyle(Palette.cream)
                             Spacer()
                             PillButton(title: "Cancel", style: .outline, action: model.cancelAddingMouseButton)
                         } else {
@@ -883,7 +847,7 @@ struct KeyboardPage: View {
                      detail: "Swap Ctrl and the Windows key, turn F-keys into volume keys, or make a key switch your input language. Works on every keyboard.",
                      systemImage: "keyboard.fill") {
                 PinkSwitch(isOn: $model.keyRemapEnabled)
-                Text(model.keyRemapEnabled ? "On" : "Off").font(.system(size: 12, weight: .semibold))
+                Text(model.keyRemapEnabled ? "On" : "Off").font(.inter(12, .semibold))
             }
             if model.keyRemapEnabled {
                 WhitePanel {
@@ -900,20 +864,31 @@ struct KeyboardPage: View {
                     ForEach($model.keyRemaps) { $remap in
                         HStack(spacing: 10) {
                             PillMenu(selection: $remap.from, options: KeyChoice.keys.map { ($0.usage, $0.name) }, onDark: false)
-                            Image(systemName: "arrow.right").font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.pink)
+                            Image(systemName: "arrow.right").font(.inter(12, .bold)).foregroundStyle(Palette.pink)
                             PillMenu(selection: $remap.to, options: KeyChoice.targets.map { ($0.usage, $0.name) }, onDark: false)
                             Button { model.keyRemaps.removeAll { $0.id == remap.id } } label: {
-                                Image(systemName: "xmark").font(.system(size: 11, weight: .heavy))
-                                    .frame(width: 30, height: 30).background(Color(hex: 0xF2F2F0), in: Circle())
+                                Image(systemName: "minus.circle.fill").font(.inter(20)).foregroundStyle(Palette.orange)
+                                    .frame(width: 30, height: 30).contentShape(Circle())
                             }
-                            .buttonStyle(.plain).help("Remove this remap")
+                            .buttonStyle(.plain).help("Remove this remap").accessibilityLabel("Remove this remap")
                         }
                     }
                     if model.keyRemaps.isEmpty {
-                        Text("No remaps yet. Click Add remap.").font(.system(size: 13)).foregroundStyle(Palette.greyOnLight)
+                        Text("No remaps yet. Click Add remap.").font(.inter(13)).foregroundStyle(Palette.greyOnLight)
                     }
                     if Set(model.keyRemaps.map(\.from)).count < model.keyRemaps.count {
-                        Text("A key is listed twice; only its last row is used.").font(.system(size: 12)).foregroundStyle(Palette.orange)
+                        Text("A key is listed twice; only its last row is used.").font(.inter(12)).foregroundStyle(Palette.orange)
+                    }
+                    // Control and Command are special keys that macOS handles itself.
+                    let specialKeys: Set<Int> = [0x7_0000_00E0, 0x7_0000_00E3, 0x7_0000_00E4, 0x7_0000_00E7]
+                    if model.keyRemaps.contains(where: { specialKeys.contains(Int($0.from)) || specialKeys.contains(Int($0.to)) }) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Control and Command can't be swapped reliably here. To swap them, change them in System Settings › Keyboard › Keyboard Shortcuts › Modifier Keys, then MicFlow follows it.")
+                                .font(.inter(12)).foregroundStyle(Palette.orange)
+                            PillButton(title: "Open Keyboard Settings", systemImage: "keyboard", style: .ink) {
+                                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!)
+                            }
+                        }
                     }
                 }
                 status
@@ -983,6 +958,7 @@ struct CapturePage: View {
     let theme: HomeTheme
     @Environment(\.compactLayout) private var compact
     @State private var keyDraft = ""
+    @State private var tab = "image"
 
     var body: some View {
         PageBody {
@@ -997,74 +973,57 @@ struct CapturePage: View {
                     PillButton(title: "Screen Recording Settings", style: .ink, action: capture.openScreenRecordingSettings)
                 }
             }
+            // Image and Video each have their own tab, with their own tools, settings and shortcuts.
+            HStack(spacing: 2) {
+                Pill(title: "Image", selected: tab == "image", onDark: true) { tab = "image" }
+                Pill(title: "Video", selected: tab == "video", onDark: true) { tab = "video" }
+            }
+            .padding(3).background(Color.white.opacity(0.10), in: Capsule())
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if tab == "image" {
             WhitePanel {
                 HStack(alignment: .firstTextBaseline) {
-                    Text("Tools").font(.display(24))
+                    Text("Image").font(.display(24))
                     if !compact {
-                        Text("click, or use the shortcut").font(.system(size: 12)).foregroundStyle(Palette.greyOnLight)
+                        Text("click, or use the shortcut").font(.inter(12)).foregroundStyle(Palette.greyOnLight)
                     }
                     Spacer()
                     PillButton(title: compact ? "Folder" : "Captures folder", systemImage: "folder", style: .ink, action: capture.openFolder)
                 }
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: compact ? 2 : 4), spacing: 10) {
-                    ForEach(CaptureAction.allCases) { action in
+                    ForEach(CaptureAction.imageActions) { action in
                         tile(action.title, action.systemImage, capture.shortcutsEnabled && capture.shortcut(for: action).keyCode >= 0 ? capture.shortcut(for: action).text : nil) { capture.perform(action) }
                     }
                     tile("Mark Up an Image", "pencil.tip.crop.circle", nil, capture.openImage)
                 }
+                Divider()
+                CheckRow(title: "Copy screenshots to the clipboard", isOn: $capture.copyToClipboard)
+                CheckRow(title: "Show a preview after each screenshot (to mark up, copy or upload)", isOn: $capture.showPreview)
+                HStack(spacing: 6) {
+                    Text("Self-timer").font(.inter(13))
+                    Spacer()
+                    ForEach([3, 5, 10], id: \.self) { seconds in
+                        Pill(title: "\(seconds) s", selected: capture.timerSeconds == seconds, onDark: false) { capture.timerSeconds = seconds }
+                    }
+                }
+                Text("Capture Text reads text on this Mac; nothing is uploaded.").font(.inter(12)).foregroundStyle(Palette.greyOnLight)
             }
-            CardColumns {
-                FeatureCard(theme: theme, systemImage: "gearshape.fill", title: "Options") {
-                    CheckRow(title: "Copy screenshots to the clipboard", isOn: $capture.copyToClipboard)
-                    CheckRow(title: "Record the microphone with videos", isOn: $capture.recordMicrophone)
-                    CheckRow(title: "Keyboard shortcuts", isOn: $capture.shortcutsEnabled)
-                    HStack(spacing: 6) {
-                        Text("Self-timer").font(.system(size: 13))
-                        Spacer()
-                        ForEach([3, 5, 10], id: \.self) { seconds in
-                            Pill(title: "\(seconds) s", selected: capture.timerSeconds == seconds) { capture.timerSeconds = seconds }
-                        }
-                    }
-                    Note(text: "Capture Text reads text on this Mac; nothing is uploaded.")
-                }
-                FeatureCard(theme: theme, systemImage: "command", title: "Shortcuts", subtitle: "Click one, then press the new keys") {
-                    ForEach(CaptureAction.allCases) { action in
-                        HStack {
-                            Image(systemName: action.systemImage).font(.system(size: 12)).frame(width: 18)
-                            Text(action.title).font(.system(size: 13))
-                            Spacer()
-                            if capture.choosingShortcut == action {
-                                Text("Press keys…").font(.system(size: 12)).foregroundStyle(Palette.greyOnDark)
-                                PillButton(title: "Cancel", style: .outline, action: capture.cancelChoosingShortcut)
-                            } else {
-                                let shortcut = capture.shortcut(for: action)
-                                PillButton(title: shortcut.keyCode >= 0 ? shortcut.text : "Choose", style: .cream) {
-                                    capture.chooseShortcut(for: action)
-                                }
-                            }
-                        }
-                    }
-                    if let message = capture.shortcutMessage { Note(text: message) }
-                    HStack {
-                        Note(text: "Use ⌘, ⌥ or ⌃ with a key, or an F key. Esc cancels.")
-                        Spacer()
-                        PillButton(title: "Reset", style: .outline, action: capture.resetShortcuts)
-                    }
-                }
-            } right: {
+                CardColumns {
+                    shortcutsCard(CaptureAction.imageActions)
+                } right: {
                 FeatureCard(theme: theme, systemImage: "link", title: "Share links",
                             subtitle: imageHost.hasKey ? "Uploads go to ImgBB, link-only" : "Get a link to any screenshot") {
                     if imageHost.hasKey {
                         Note(text: "Click Upload on a screenshot and its link is copied. Only people with the link can see it; nothing lists your uploads. Videos stay on your Mac.")
                         HStack(spacing: 6) {
-                            Text("Copy as").font(.system(size: 13))
+                            Text("Copy as").font(.inter(13))
                             Spacer()
                             ForEach(ImageHost.LinkStyle.allCases) { style in
                                 Pill(title: style.title, selected: imageHost.linkStyle == style) { imageHost.linkStyle = style }
                             }
                         }
                         HStack {
-                            Label("Key saved in your Keychain", systemImage: "checkmark.seal.fill").font(.system(size: 12, weight: .semibold))
+                            Label("Key saved in your Keychain", systemImage: "checkmark.seal.fill").font(.inter(12, .semibold))
                                 .foregroundStyle(Palette.cream)
                             Spacer()
                             PillButton(title: "Remove key", style: .outline, action: imageHost.removeKey)
@@ -1072,13 +1031,68 @@ struct CapturePage: View {
                     } else {
                         Note(text: "Uploads go to ImgBB, a free image host. Make a free account there, copy your API key and paste it here. Each picture gets a link only you share.")
                         Link("Get a free ImgBB key", destination: ImageHost.keyPage)
-                            .font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.cream)
+                            .font(.inter(12, .semibold)).foregroundStyle(Palette.cream)
                         HStack {
                             PillField(placeholder: "Paste your ImgBB key", text: $keyDraft, secure: true) { saveKey() }
                             PillButton(title: "Save", style: .cream, action: saveKey)
                         }
                     }
                 }
+            }
+            } else {
+            WhitePanel {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Video").font(.display(24))
+                    Text("record your screen, with sound").font(.inter(12)).foregroundStyle(Palette.greyOnLight)
+                    Spacer()
+                }
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: compact ? 2 : 4), spacing: 10) {
+                    tile(capture.isRecording ? "Stop Recording" : "Record Screen", capture.isRecording ? "stop.circle" : "record.circle",
+                         capture.shortcutsEnabled && capture.shortcut(for: .record).keyCode >= 0 ? capture.shortcut(for: .record).text : nil) { capture.perform(.record) }
+                }
+                Divider()
+                CheckRow(title: "Record my microphone", isOn: $capture.recordMicrophone)
+                CheckRow(title: "Record the sound on this Mac (meetings, videos)", isOn: $capture.recordSystemAudio)
+                Text("When a recording is finished you can copy it, or upload it to your own Google Drive and get a link.")
+                    .font(.inter(12)).foregroundStyle(Palette.greyOnLight)
+            }
+                CardColumns {
+                    shortcutsCard([.record])
+                } right: {
+                    FeatureCard(theme: theme, systemImage: "icloud.and.arrow.up", title: "Share videos", subtitle: "To your own Google Drive") {
+                        Note(text: "When a recording is finished, choose Upload video to GDrive. Google asks your permission once. The video goes straight to your Drive, and a link anyone can open is copied for you.")
+                    }
+                }
+            }
+        }
+    }
+
+
+    /// The shortcuts of these tools: the key, and an Edit shortcut button.
+    private func shortcutsCard(_ actions: [CaptureAction]) -> some View {
+        FeatureCard(theme: theme, systemImage: "command", title: "Shortcuts", subtitle: "Click Edit shortcut, then press the new keys") {
+            CheckRow(title: "Use keyboard shortcuts", isOn: $capture.shortcutsEnabled)
+            ForEach(actions) { action in
+                HStack {
+                    Image(systemName: action.systemImage).font(.inter(12)).frame(width: 18)
+                    Text(action.title).font(.inter(13))
+                    Spacer()
+                    if capture.choosingShortcut == action {
+                        Text("Press keys…").font(.inter(12)).foregroundStyle(Palette.greyOnDark)
+                        PillButton(title: "Cancel", style: .outline, action: capture.cancelChoosingShortcut)
+                    } else {
+                        let shortcut = capture.shortcut(for: action)
+                        Text(shortcut.keyCode >= 0 ? shortcut.text : "None").font(.inter(12, .bold)).foregroundStyle(Palette.ink)
+                            .padding(.horizontal, 12).padding(.vertical, 7).background(Palette.cream, in: Capsule())
+                        PillButton(title: "Edit shortcut", style: .outline) { capture.chooseShortcut(for: action) }
+                    }
+                }
+            }
+            if let message = capture.shortcutMessage { Note(text: message) }
+            HStack {
+                Note(text: "Use ⌘, ⌥ or ⌃ with a key, or an F key. Esc cancels.")
+                Spacer()
+                PillButton(title: "Reset", style: .outline, action: capture.resetShortcuts)
             }
         }
     }
@@ -1093,15 +1107,15 @@ struct CapturePage: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 12) {
                 Circle().fill(Palette.cream).frame(width: 36, height: 36)
-                    .overlay(Image(systemName: systemImage).font(.system(size: 14, weight: .bold)).foregroundStyle(Palette.pink))
-                Text(title).font(.system(size: 13, weight: .bold)).multilineTextAlignment(.leading)
+                    .overlay(Image(systemName: systemImage).font(.inter(14, .bold)).foregroundStyle(Palette.pink))
+                Text(title).font(.inter(13, .bold)).multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Spacer(minLength: 0)
-                Text(shortcut ?? " ").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.greyOnLight)
+                Text(shortcut ?? " ").font(.inter(11, .semibold)).foregroundStyle(Palette.greyOnLight)
             }
             .padding(14)
             .frame(maxWidth: .infinity, minHeight: 128, alignment: .topLeading)
-            .background(Color(hex: 0xF2F2F0), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background(Palette.panelRaised, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -1127,12 +1141,12 @@ struct ActionPicker: View {
 
     var body: some View {
         HStack {
-            if let label { Text(label).font(.system(size: 13)).lineLimit(1); Spacer() }
+            if let label { Text(label).font(.inter(13)).lineLimit(1); Spacer() }
             Button { search = ""; open = true } label: {
                 HStack(spacing: 8) {
-                    Text(detail ?? selection.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                    Text(detail ?? selection.title).font(.inter(13, .semibold)).lineLimit(1)
                     Spacer(minLength: 4)
-                    Image(systemName: "magnifyingglass").font(.system(size: 10, weight: .bold))
+                    Image(systemName: "magnifyingglass").font(.inter(10, .bold))
                 }
                 .padding(.horizontal, 14).padding(.vertical, 8)
                 .frame(maxWidth: label == nil ? .infinity : 230)
@@ -1150,7 +1164,7 @@ struct ActionPicker: View {
                             ForEach(MouseAction.groups, id: \.self) { group in
                                 let items = matches.filter { $0.group == group }
                                 if !items.isEmpty {
-                                    Text(group.uppercased()).font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+                                    Text(group.uppercased()).font(.inter(10, .bold)).foregroundStyle(.secondary)
                                         .padding(.top, 6).padding(.leading, 12)
                                     ForEach(items) { action in
                                         Button {
@@ -1184,16 +1198,3 @@ struct ActionPicker: View {
     }
 }
 
-/// "Set it up for me": the guide, then Google's sign-in, then MicFlow makes the key in the user's account.
-struct KeySetupButton: View {
-    @ObservedObject var account: Account
-    var title = "Set it up for me with Google"
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            PillButton(title: account.isWorking ? "Waiting for Google…" : title,
-                       systemImage: "sparkles", style: .cream, action: account.keySetup.begin)
-            KeySetupStatus(flow: account.keySetup)
-        }
-    }
-}

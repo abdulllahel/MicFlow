@@ -10,6 +10,9 @@ enum CaptureAction: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// The tools in the Image section (recording is in Video).
+    static var imageActions: [CaptureAction] { allCases.filter { $0 != .record } }
+
     var title: String {
         switch self {
         case .area: return "Capture Area"
@@ -106,6 +109,14 @@ final class CaptureModel: ObservableObject {
     @Published var recordMicrophone: Bool {
         didSet { defaults.set(recordMicrophone, forKey: Keys.microphone) }
     }
+    /// Also record the sound playing on this Mac (a meeting's other people, a video).
+    @Published var recordSystemAudio: Bool {
+        didSet { defaults.set(recordSystemAudio, forKey: Keys.systemAudio) }
+    }
+    /// Show the small preview window (annotate, copy, upload) after a screenshot. Off by default.
+    @Published var showPreview: Bool {
+        didSet { defaults.set(showPreview, forKey: Keys.preview) }
+    }
     /// Each tool's shortcut, by the tool's name; tools not in here use their default.
     @Published private(set) var shortcuts: [String: Shortcut] = [:]
     /// The tool whose new shortcut is being typed.
@@ -118,7 +129,10 @@ final class CaptureModel: ObservableObject {
     let imageHost = ImageHost()
     let folder: URL
 
+    /// Where the last capture was taken, so its preview card appears there.
+    private var captureRegion: CGRect?
     private let recorder = ScreenRecorder()
+    private var recordingControls: RecordingControls?
     private let hotKeys = HotKeys()
     private let toast = CaptureToast()
     private let quickAccess = QuickAccessPanel()
@@ -127,6 +141,7 @@ final class CaptureModel: ObservableObject {
 
     private enum Keys {
         static let shortcuts = "captureShortcuts", copy = "captureCopyToClipboard", timer = "captureTimerSeconds"
+        static let systemAudio = "captureRecordSystemAudio", preview = "capturePreviewEnabled"
         static let microphone = "captureRecordMicrophone", lastArea = "captureLastArea", shortcutMap = "captureShortcutMap"
     }
 
@@ -137,11 +152,13 @@ final class CaptureModel: ObservableObject {
     }
 
     init() {
-        defaults.register(defaults: [Keys.shortcuts: true, Keys.copy: true, Keys.timer: 5, Keys.microphone: false])
+        defaults.register(defaults: [Keys.shortcuts: true, Keys.copy: true, Keys.timer: 5, Keys.microphone: true, Keys.systemAudio: true, Keys.preview: false])
         shortcutsEnabled = defaults.bool(forKey: Keys.shortcuts)
         copyToClipboard = defaults.bool(forKey: Keys.copy)
         timerSeconds = defaults.integer(forKey: Keys.timer)
         recordMicrophone = defaults.bool(forKey: Keys.microphone)
+        recordSystemAudio = defaults.bool(forKey: Keys.systemAudio)
+        showPreview = defaults.bool(forKey: Keys.preview)
         shortcuts = defaults.data(forKey: Keys.shortcutMap).flatMap { try? JSONDecoder().decode([String: Shortcut].self, from: $0) } ?? [:]
         let pictures = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask)[0]
         folder = pictures.appendingPathComponent("MicFlow Captures", isDirectory: true)
@@ -217,6 +234,7 @@ final class CaptureModel: ObservableObject {
     // MARK: Screenshots
 
     private func capture(_ rect: CGRect, remember: Bool = true) {
+        captureRegion = rect
         if remember { lastArea = rect }
         let url = newFile(prefix: "Screenshot", extension: "png")
         Self.screencapture(["-x", "-R", Self.screencaptureRect(rect), url.path]) { ok in
@@ -224,17 +242,39 @@ final class CaptureModel: ObservableObject {
         }
     }
 
+    /// The on-screen frame (Cocoa coordinates) of the top window under the pointer.
+    private static func windowUnderPointer() -> CGRect? {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]],
+              let primary = NSScreen.screens.first else { return nil }
+        let mouse = NSEvent.mouseLocation
+        let flipped = CGPoint(x: mouse.x, y: primary.frame.height - mouse.y)
+        for info in list where (info[kCGWindowLayer as String] as? Int) == 0 {
+            guard let dict = info[kCGWindowBounds as String] as? NSDictionary, let bounds = CGRect(dictionaryRepresentation: dict),
+                  bounds.contains(flipped), (info[kCGWindowOwnerPID as String] as? Int32) != ProcessInfo.processInfo.processIdentifier else { continue }
+            return CGRect(x: bounds.minX, y: primary.frame.height - bounds.maxY, width: bounds.width, height: bounds.height)
+        }
+        return nil
+    }
+
     private func captureWindow() {
+        captureRegion = nil
         let url = newFile(prefix: "Screenshot", extension: "png")
         // macOS's own window picker: hover a window and click it. Esc cancels, leaving no file.
         Self.screencapture(["-x", "-i", "-w", url.path]) { ok in
+            // The window you clicked is the one under the pointer now.
+            self.captureRegion = Self.windowUnderPointer()
             if ok { self.finished(url) }
         }
     }
 
     private func finished(_ url: URL) {
         if copyToClipboard { Self.copyImage(at: url) }
-        quickAccess.show(url, actions: actions(for: url))
+        if showPreview {
+            quickAccess.show(url, actions: actions(for: url), near: captureRegion)
+        } else {
+            // No preview window: the picture is saved (and copied), and a short note says so.
+            toast.show(copyToClipboard ? "Screenshot saved and copied" : "Screenshot saved", isError: false)
+        }
     }
 
     private func countDown(from seconds: Int, then capture: @escaping () -> Void) {
@@ -288,6 +328,7 @@ final class CaptureModel: ObservableObject {
     // MARK: Recording
 
     private func startRecording(_ rect: CGRect) {
+        captureRegion = rect
         Task {
             var microphone = recordMicrophone
             if microphone, !(await AVCaptureDevice.requestAccess(for: .audio)) {
@@ -295,12 +336,23 @@ final class CaptureModel: ObservableObject {
                 toast.show("Recording without sound: MicFlow isn't allowed to use the microphone.", isError: true)
             }
             let url = newFile(prefix: "Recording", extension: "mp4")
+            // The control panel and drawing layer: the panel stays out of the video, the drawings go in.
+            let center = CGPoint(x: rect.midX, y: rect.midY)
+            let screen = NSScreen.screens.first(where: { $0.frame.contains(center) }) ?? NSScreen.main ?? NSScreen.screens[0]
+            let controls = RecordingControls(screen: screen, pause: { [recorder] in recorder.pause() },
+                                             resume: { [recorder] in recorder.resume() },
+                                             stop: { [weak self] in self?.stopRecording() })
+            controls.showOverlay()
             do {
-                try await recorder.start(rect: rect, microphone: microphone, to: url)
+                try await recorder.start(rect: rect, microphone: microphone, systemAudio: recordSystemAudio,
+                                         keepWindows: [controls.overlayWindowID], to: url)
             } catch {
+                controls.close()
                 return toast.show("Couldn't start recording: \(error.localizedDescription)", isError: true)
             }
             isRecording = true
+            controls.showPanel()
+            recordingControls = controls
             let fullScreen = NSScreen.screens.contains { $0.frame == rect }
             recordingIndicator = RecordingIndicator(area: fullScreen ? nil : rect) { [weak self] in self?.stopRecording() }
         }
@@ -311,12 +363,14 @@ final class CaptureModel: ObservableObject {
         isRecording = false
         recordingIndicator?.remove()
         recordingIndicator = nil
+        recordingControls?.close()
+        recordingControls = nil
         Task {
             defer { done() }
             guard let url = await recorder.stop() else {
                 return toast.show("The recording couldn't be saved.", isError: true)
             }
-            quickAccess.show(url, actions: actions(for: url))
+            quickAccess.show(url, actions: actions(for: url), near: captureRegion)
         }
     }
 
@@ -336,6 +390,7 @@ final class CaptureModel: ObservableObject {
                 }
             } : nil,
             upload: { [weak self] in self?.upload(url) },
+            uploadTitle: isImage ? "Upload" : "Upload video to GDrive",
             showInFinder: { NSWorkspace.shared.activateFileViewerSelecting([url]) })
     }
 
@@ -347,14 +402,32 @@ final class CaptureModel: ObservableObject {
             copied: { [weak self] in self?.toast.show("Copied", isError: false) }))
     }
 
+    /// Videos go to the person's own Google Drive; pictures go to the image host.
+    let drive = DriveUploader()
+
     func upload(_ url: URL) {
         let card = UploadCard(file: url, thumbnail: QuickAccessPanel.thumbnail(of: url))
+        if url.pathExtension.lowercased() == "mp4" {
+            Task {
+                do {
+                    let link = try await drive.upload(url) { card.progress($0) }
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(link.absoluteString, forType: .string)
+                    card.finished(link: link)
+                    toast.show("Upload complete. The link is copied to your clipboard.", isError: false, duration: 4)
+                } catch {
+                    card.failed(error.localizedDescription)
+                }
+            }
+            return
+        }
         Task {
             do {
                 let upload = try await imageHost.upload(url) { card.progress($0) }
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(upload.text, forType: .string)
                 card.finished(link: upload.url)
+                toast.show("Upload complete. The link is copied to your clipboard.", isError: false, duration: 4)
             } catch {
                 card.failed(error.localizedDescription)
             }
@@ -367,12 +440,30 @@ final class CaptureModel: ObservableObject {
     /// desktop picture.
     private func checkScreenPermission() -> Bool {
         hasScreenPermission = CGPreflightScreenCaptureAccess()
-        if hasScreenPermission { return true }
+        if hasScreenPermission {
+            // macOS can say yes while still showing only MicFlow's own windows (a permission given to an
+            // older copy of the app, or just switched on without reopening it). Other apps' window titles
+            // are hidden in that case, which is how it's noticed.
+            if Self.seesOtherApps() { return true }
+            openScreenRecordingSettings()
+            toast.show("Screen Recording isn't active for this copy of MicFlow yet. Switch MicFlow off and on in the list that just opened, then quit and reopen MicFlow.", isError: true, duration: 9)
+            return false
+        }
         if !CGRequestScreenCaptureAccess() {
             openScreenRecordingSettings()
             toast.show("Turn on MicFlow in Screen Recording settings, then quit and reopen MicFlow.", isError: true, duration: 6)
         }
         return false
+    }
+
+    /// Whether other apps' windows can really be captured: with the permission, their titles are visible.
+    private static func seesOtherApps() -> Bool {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return true }
+        let me = ProcessInfo.processInfo.processIdentifier
+        let others = list.filter { ($0[kCGWindowOwnerPID as String] as? Int32) != me && ($0[kCGWindowLayer as String] as? Int) == 0 }
+        // Nothing else open: nothing to tell, so don't block.
+        if others.isEmpty { return true }
+        return others.contains { !(($0[kCGWindowName as String] as? String) ?? "").isEmpty }
     }
 
     private func updateShortcuts() {
@@ -557,7 +648,8 @@ final class CaptureToast {
         let hosting = NSHostingView(rootView: ToastView(text: text, isError: isError, large: large))
         panel.contentView = hosting
         panel.setContentSize(hosting.fittingSize)
-        if let screen = NSScreen.main {
+        do {
+            let screen = NSScreen.underPointer
             let size = panel.frame.size
             let y = large ? screen.frame.midY - size.height / 2 : screen.visibleFrame.minY + 60
             panel.setFrameOrigin(NSPoint(x: screen.frame.midX - size.width / 2, y: y))
@@ -584,6 +676,7 @@ final class CaptureToast {
         panel.hasShadow = true
         panel.ignoresMouseEvents = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.hidesOnDeactivate = false
         return panel
     }
 }
@@ -595,7 +688,7 @@ private struct ToastView: View {
 
     var body: some View {
         Text(text)
-            .font(large ? .system(size: 64, weight: .semibold).monospacedDigit() : .callout.weight(.medium))
+            .font(large ? .inter(64, .semibold).monospacedDigit() : .callout.weight(.medium))
             .foregroundStyle(isError ? Color.red : Color.primary)
             .multilineTextAlignment(.center)
             .frame(maxWidth: large ? nil : 420)
@@ -613,6 +706,8 @@ struct QuickAccessActions {
     var copy: () -> Void
     var copyText: (() -> Void)?
     var upload: () -> Void
+    /// "Upload" for pictures, "Upload video to GDrive" for recordings.
+    var uploadTitle: String = "Upload"
     var showInFinder: () -> Void
 }
 
@@ -623,7 +718,8 @@ final class QuickAccessPanel {
     private var panel: NSPanel?
     private var hideWork: DispatchWorkItem?
 
-    func show(_ url: URL, actions: QuickAccessActions) {
+    /// `near` is where the capture was taken: the card sits in its bottom-left corner, on that screen.
+    func show(_ url: URL, actions: QuickAccessActions, near region: CGRect? = nil) {
         hide()
         let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         panel.level = .statusBar
@@ -631,6 +727,7 @@ final class QuickAccessPanel {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.hidesOnDeactivate = false
         let close: () -> Void = { [weak self] in self?.hide() }
         let view = QuickAccessView(url: url, thumbnail: Self.thumbnail(of: url), actions: actions, close: close) { [weak self] hovering in
             if hovering { self?.hideWork?.cancel() } else { self?.scheduleHide() }
@@ -638,9 +735,10 @@ final class QuickAccessPanel {
         let hosting = NSHostingView(rootView: view)
         panel.contentView = hosting
         panel.setContentSize(hosting.fittingSize)
-        if let screen = NSScreen.main {
-            panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.minX + 20, y: screen.visibleFrame.minY + 20))
-        }
+        // Always the bottom-left corner, on the screen where the capture was taken (not the screen MicFlow's
+        // own window is on), so it shows over full-screen apps too.
+        let screen = region.flatMap { r in NSScreen.screens.first { $0.frame.contains(CGPoint(x: r.midX, y: r.midY)) } } ?? NSScreen.underPointer
+        panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.minX + 20, y: screen.visibleFrame.minY + 20))
         panel.orderFrontRegardless()
         self.panel = panel
         scheduleHide()
@@ -656,7 +754,7 @@ final class QuickAccessPanel {
         hideWork?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.hide() }
         hideWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: work)
     }
 
     static func thumbnail(of url: URL) -> NSImage? {
@@ -702,7 +800,7 @@ private struct QuickAccessView: View {
                 if let annotate = actions.annotate { button("Mark up", "pencil.tip.crop.circle", annotate) }
                 button("Copy", "doc.on.doc", actions.copy)
                 if let copyText = actions.copyText { button("Copy text", "text.viewfinder", copyText) }
-                button("Upload to GitHub", "icloud.and.arrow.up", actions.upload)
+                button(actions.uploadTitle, "icloud.and.arrow.up", actions.upload)
                 button("Show in Finder", "folder", actions.showInFinder)
             }
         }
@@ -727,7 +825,7 @@ private struct QuickAccessView: View {
 @MainActor
 final class RecordingIndicator {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    private var frame: NSWindow?
+    private var frame: NSPanel?
     private var timer: Timer?
     private let started = Date()
     private let stop: () -> Void
@@ -761,7 +859,8 @@ final class RecordingIndicator {
     }
 
     private func showFrame(around area: CGRect) {
-        let window = NSWindow(contentRect: area.insetBy(dx: -3, dy: -3), styleMask: .borderless, backing: .buffered, defer: false)
+        let window = NSPanel(contentRect: area.insetBy(dx: -3, dy: -3), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        window.hidesOnDeactivate = false
         window.level = .statusBar
         window.isOpaque = false
         window.backgroundColor = .clear
@@ -786,7 +885,7 @@ private final class RecordingFrameView: NSView {
 
 // MARK: - Uploading
 
-/// A card in the bottom right corner while a capture uploads to GitHub: the file, a progress bar,
+/// A card in the bottom right corner while a capture uploads: the file, a progress bar,
 /// then "Link copied" (or what went wrong) for a few seconds.
 @MainActor
 final class UploadCard {
@@ -816,6 +915,7 @@ final class UploadCard {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.hidesOnDeactivate = false
         hosting = NSHostingView(rootView: UploadCardView(name: file.lastPathComponent, thumbnail: thumbnail,
                                                          phase: .uploading(nil), close: {}))
         panel.contentView = hosting
@@ -823,7 +923,8 @@ final class UploadCard {
         Self.current = self
         update(.uploading(nil))
         // Placed once: the card keeps its corner as its text changes.
-        if let screen = NSScreen.main {
+        do {
+            let screen = NSScreen.underPointer
             let size = panel.frame.size
             panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.maxX - size.width - 20, y: screen.visibleFrame.minY + 20))
         }
@@ -926,10 +1027,13 @@ private struct UploadCardView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
+    /// Videos go to Google Drive, pictures to the image host.
+    private var destination: String { name.lowercased().hasSuffix(".mp4") ? "Google Drive" : "image host" }
+
     private var title: String {
         switch phase {
-        case .uploading: return "Uploading to GitHub…"
-        case .finished: return "Uploaded to GitHub"
+        case .uploading: return "Uploading to \(destination)…"
+        case .finished: return "Uploaded to \(destination)"
         case .failed: return "Upload failed"
         }
     }
@@ -940,5 +1044,14 @@ private struct UploadCardView: View {
         case .finished: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
         case .failed: Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
         }
+    }
+}
+
+
+extension NSScreen {
+    /// The screen the mouse is on. (`NSScreen.main` is the screen of MicFlow's own window, which may not be where you are working.)
+    static var underPointer: NSScreen {
+        let mouse = NSEvent.mouseLocation
+        return screens.first { $0.frame.contains(mouse) } ?? main ?? screens[0]
     }
 }

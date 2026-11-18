@@ -3,6 +3,52 @@ import SwiftUI
 
 /// The banner at the top of Home when a new version is out. Its words come from the CMS; versions
 /// older than the CMS's minimum get the stronger "out of date" words.
+/// Shown when settings from another of your devices were brought in: a restart makes MicFlow use them.
+struct SettingsRestartBanner: View {
+    @ObservedObject var model: BoostModel
+
+    var body: some View {
+        if model.settingsRestartNeeded {
+            HStack(spacing: 14) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.inter(18, .bold))
+                    .foregroundStyle(Palette.pink)
+                    .frame(width: 40, height: 40)
+                    .background(Palette.cream, in: Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Settings from your other device arrived").font(.inter(15, .bold))
+                    Text("Restart MicFlow to use them. It takes a second.")
+                        .font(.inter(12)).foregroundStyle(Palette.ink.opacity(0.7))
+                }
+                Spacer()
+                PillButton(title: "Restart MicFlow", systemImage: "arrow.clockwise") { model.restartToApplySettings() }
+            }
+            .padding(16)
+            .background(Palette.yellow, in: RoundedRectangle(cornerRadius: 22))
+            .foregroundStyle(Palette.ink)
+        }
+    }
+}
+
+/// The optional sign-in: a slim banner on every page until the person signs in with Google.
+struct LoginBanner: View {
+    @ObservedObject var account: Account
+
+    var body: some View {
+        if account.isConfigured && !account.isSignedIn {
+            HStack(spacing: 12) {
+                Image(systemName: "icloud.and.arrow.up.fill").font(.inter(16, .bold)).foregroundStyle(Palette.heroInk)
+                Text("Log in with Google to keep all your devices in sync.").font(.inter(14, .semibold))
+                Spacer()
+                GoogleSignInButton(title: "Log in with Google", size: .large, isWorking: account.isWorking) { account.signIn() }
+            }
+            .padding(.horizontal, 20).padding(.vertical, 12)
+            .background(Palette.cream, in: RoundedRectangle(cornerRadius: 34, style: .continuous))
+            .foregroundStyle(Palette.ink)
+        }
+    }
+}
+
 struct UpdateBanner: View {
     @ObservedObject var updater: Updater
     @ObservedObject var store: SiteContentStore
@@ -13,23 +59,23 @@ struct UpdateBanner: View {
             let outdated = notice.minimumVersion.map { Updater.isNewer($0, than: updater.currentVersion) } ?? false
             HStack(spacing: 14) {
                 Image(systemName: outdated ? "exclamationmark.triangle.fill" : "sparkles")
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.inter(18, .bold))
                     .foregroundStyle(outdated ? Palette.white : Palette.pink)
                     .frame(width: 40, height: 40)
                     .background(outdated ? Palette.orange : Palette.cream, in: Circle())
                 VStack(alignment: .leading, spacing: 2) {
                     Text(outdated ? notice.outdatedTitle ?? notice.title : notice.title)
-                        .font(.system(size: 15, weight: .bold))
+                        .font(.inter(15, .bold))
                     Text((outdated ? notice.outdatedSubtitle ?? notice.subtitle : notice.subtitle) + "  (MicFlow \(version))")
-                        .font(.system(size: 12))
+                        .font(.inter(12))
                         .foregroundStyle(Palette.ink.opacity(0.7))
                         .lineLimit(2)
                     if let problem = updater.lastError {
                         HStack(spacing: 6) {
-                            Text(problem).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.orange)
+                            Text(problem).font(.inter(11, .semibold)).foregroundStyle(Palette.orange)
                                 .fixedSize(horizontal: false, vertical: true)
-                            Link("Download", destination: URL(string: "https://github.com/\(SiteContentStore.repository)/releases/latest")!)
-                                .font(.system(size: 11, weight: .bold))
+                            Link("Download", destination: URL(string: "https://micflow.abdullahel.com/download.html")!)
+                                .font(.inter(11, .bold))
                         }
                     }
                 }
@@ -42,7 +88,7 @@ struct UpdateBanner: View {
         } else if case .installing(let step) = updater.state {
             HStack(spacing: 10) {
                 ProgressView().controlSize(.small)
-                Text(step).font(.system(size: 13, weight: .semibold))
+                Text(step).font(.inter(13, .semibold))
                 Spacer()
             }
             .foregroundStyle(Palette.ink)
@@ -64,20 +110,20 @@ struct BlockerView: View {
             Color.black.opacity(0.55).ignoresSafeArea()
             VStack(alignment: .leading, spacing: 14) {
                 Image(systemName: "hand.raised.fill")
-                    .font(.system(size: 22, weight: .bold)).foregroundStyle(Palette.white)
+                    .font(.inter(22, .bold)).foregroundStyle(Palette.white)
                     .frame(width: 48, height: 48).background(Palette.orange, in: Circle())
                 Text(blocker.title).font(.display(30))
                 if !blocker.message.isEmpty {
-                    Text(blocker.message).font(.system(size: 14)).fixedSize(horizontal: false, vertical: true)
+                    Text(blocker.message).font(.inter(14)).fixedSize(horizontal: false, vertical: true)
                 }
                 Text("MicFlow's shortcuts and features are paused until then.")
-                    .font(.system(size: 12)).foregroundStyle(Palette.greyOnLight)
+                    .font(.inter(12)).foregroundStyle(Palette.greyOnLight)
                 HStack(spacing: 8) {
                     switch blocker.condition {
                     case .update:
                         if case .installing(let step) = updater.state {
                             ProgressView().controlSize(.small)
-                            Text(step).font(.system(size: 13))
+                            Text(step).font(.inter(13))
                         } else {
                             PillButton(title: "Update now", systemImage: "arrow.down.circle", style: .ink) {
                                 if case .available = updater.state { updater.install() } else { updater.check() }
@@ -118,11 +164,11 @@ struct SetupBanner: View {
     private func banner(_ title: String, _ detail: String, button: String, action: @escaping () -> Void) -> some View {
         HStack(spacing: 14) {
             Image(systemName: "exclamationmark.circle.fill")
-                .font(.system(size: 18, weight: .bold)).foregroundStyle(Palette.white)
+                .font(.inter(18, .bold)).foregroundStyle(Palette.white)
                 .frame(width: 40, height: 40).background(Palette.orange, in: Circle())
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 15, weight: .bold))
-                Text(detail).font(.system(size: 12)).foregroundStyle(Palette.ink.opacity(0.7))
+                Text(title).font(.inter(15, .bold))
+                Text(detail).font(.inter(12)).foregroundStyle(Palette.ink.opacity(0.7))
             }
             Spacer()
             PillButton(title: button, systemImage: "arrow.right", style: .ink, action: action)

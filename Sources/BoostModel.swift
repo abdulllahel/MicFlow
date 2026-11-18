@@ -37,11 +37,16 @@ final class BoostModel: ObservableObject {
         static let boostRangeRaised = "boostRangeRaised"
     }
 
-    static let maxGainDB = 30.0
+    /// +39.6 dB is 96×, three times the old top of +30 dB (about 32×). A peak limiter in the engine
+    /// keeps the loudest parts from clipping.
+    static let maxGainDB = 39.6
 
     @Published private(set) var micDevices: [AudioDevice] = []
     @Published private(set) var speakerDevices: [AudioDevice] = []
     /// BlackHole 2ch: boosted mic audio goes in here, and other apps record from it.
+    /// The two sound helpers, downloaded on demand (see SoundHelperInstaller).
+    let soundHelpers = SoundHelperInstaller()
+    var helpersMissing: Bool { micVirtual == nil || speakerVirtual == nil }
     @Published private(set) var micVirtual: AudioDevice?
     /// BlackHole 16ch: the Mac's default output while speaker boost is on; its sound is boosted from here.
     @Published private(set) var speakerVirtual: AudioDevice?
@@ -270,7 +275,7 @@ final class BoostModel: ObservableObject {
     @Published private(set) var locked = false
 
     /// Starts Google sign-in, when sign-in is set up.
-    var signInAction: (() -> Void)? { account.isConfigured ? { [weak self] in self?.account.signIn(setUpKey: false) } : nil }
+    var signInAction: (() -> Void)? { account.isConfigured ? { [weak self] in self?.account.signIn() } : nil }
 
     /// Shows or lifts your blocking pop-up from the CMS. Your admin build is never blocked, so you
     /// can always turn it off.
@@ -316,16 +321,32 @@ final class BoostModel: ObservableObject {
     /// The optional Google account: preferences, API key and feature requests.
     let account = Account()
     lazy var featureRequests = FeatureRequestStore(account: account)
+    /// Remembers your windows and puts them back after a restart.
+    let windowLayout = WindowLayoutManager()
     /// Copy on one device, paste on your others.
     lazy var clipboard = UniversalClipboard(account: account)
+    /// Dictation history shared with your linked devices.
+    lazy var historySync = HistorySync(log: voiceTyping.log, account: account, clipboard: clipboard)
     private var contentWatch: AnyCancellable?
     private var accountWatch: AnyCancellable?
     private var contentTimer: Timer?
+    private var pullTimer: Timer?
     private var prefsWatch: AnyCancellable?
     private var lastSavedPreferences: Data?
 
     /// Saves your preferences, every setting and the sealed key to your account (when something
     /// changed since the last save).
+    /// What would be saved right now: used to tell whether there are changes not saved yet.
+    private func localFingerprint() -> Data? {
+        guard let preferences = try? JSONEncoder().encode(voiceTyping.savedPreferences()) else { return nil }
+        var fingerprint = preferences
+        fingerprint += Data(SettingsSync.canonical(SettingsSync.snapshot()).utf8)
+        let key = voiceTyping.keyUpload
+        if case .set(let value) = key { fingerprint += Data(SHA256.hash(data: Data(value.utf8))) }
+        if case .clear = key { fingerprint += Data("clear".utf8) }
+        return fingerprint
+    }
+
     func syncPreferences() {
         guard account.isSignedIn, !restoringFromAccount else { return }
         Task {
@@ -333,11 +354,7 @@ final class BoostModel: ObservableObject {
                 let preferences = voiceTyping.savedPreferences()
                 let settings = SettingsSync.snapshot()
                 let key = voiceTyping.keyUpload
-                var fingerprint = try JSONEncoder().encode(preferences)
-                fingerprint += Data(SettingsSync.canonical(settings).utf8)
-                if case .set(let value) = key { fingerprint += Data(SHA256.hash(data: Data(value.utf8))) }
-                if case .clear = key { fingerprint += Data("clear".utf8) }
-                guard fingerprint != lastSavedPreferences else { return }
+                guard let fingerprint = localFingerprint(), fingerprint != lastSavedPreferences else { return }
                 try await PreferenceSync.save(preferences, key: key, settings: settings, account: account)
                 lastSavedPreferences = fingerprint
             } catch {
@@ -346,39 +363,42 @@ final class BoostModel: ObservableObject {
         }
     }
 
-    private var restoringFromAccount = false
-    /// Settings from the account were written while key setup was still running: MicFlow restarts
-    /// to use them once setup is over.
-    private var restartAfterKeySetup = false
-
-    /// Right after a Google sign-in: first bring back what the account has (preferences, the key,
-    /// every setting), and only when there's still no working key, make one with Google.
-    private func signedIn(googleToken: String?, setUpKey: Bool) {
+    /// Settings changed on another of your devices: brought in every minute and when MicFlow comes to
+    /// the front. Anything you changed here that isn't saved yet is saved first, never overwritten.
+    func pullPreferences() {
+        guard account.isSignedIn, !restoringFromAccount, voiceTyping.phase == .idle else { return }
+        if let lastSavedPreferences, localFingerprint() != lastSavedPreferences { syncPreferences(); return }
         Task {
             restoringFromAccount = true
-            if setUpKey { account.keySetup.showStep("Bringing back your settings…") }
+            defer { restoringFromAccount = false }
+            guard let saved = try? await PreferenceSync.load(account) else { return }
+            voiceTyping.apply(saved.preferences, apiKey: saved.apiKey)
+            if let settings = saved.settings, SettingsSync.apply(settings) { settingsRestartNeeded = true }
+            lastSavedPreferences = localFingerprint()
+        }
+    }
+
+    /// True once settings from another device were written here and a restart will use them.
+    @Published var settingsRestartNeeded = false
+
+    private var restoringFromAccount = false
+    /// Right after a Google sign-in: bring back what the account has (preferences, the key, every setting).
+    private func signedIn() {
+        Task {
+            restoringFromAccount = true
             var settingsChanged = false
             if let saved = try? await PreferenceSync.load(account) {
                 voiceTyping.apply(saved.preferences, apiKey: saved.apiKey)
                 if let settings = saved.settings { settingsChanged = SettingsSync.apply(settings) }
             }
             restoringFromAccount = false
-            let needsKey = !voiceTyping.hasKey || voiceTyping.keyRefused
-            if setUpKey, needsKey {
-                account.keySetup.received(token: googleToken)
-                restartAfterKeySetup = settingsChanged
-            } else if setUpKey {
-                account.keySetup.finishedWithSavedKey()
-                voiceTyping.enabled = true
-            }
             syncPreferences()
-            if settingsChanged, !(setUpKey && needsKey) { restartToApplySettings() }
+            if settingsChanged { restartToApplySettings() }
         }
     }
 
     /// Settings are read when MicFlow starts, so it restarts once to use the account's.
-    private func restartToApplySettings() {
-        account.keySetup.showStep("Bringing back your settings. MicFlow restarts in a moment…")
+    func restartToApplySettings() {
         let script = """
             while /bin/kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do /bin/sleep 0.2; done
             /usr/bin/open "$1"
@@ -483,46 +503,30 @@ final class BoostModel: ObservableObject {
         accountWatch = account.$user.dropFirst().sink { [weak self] _ in
             DispatchQueue.main.async { self?.evaluateLock() }
         }
-        account.onSignedIn = { [weak self] token, setUpKey in self?.signedIn(googleToken: token, setUpKey: setUpKey) }
+        capture.drive.accessToken = { [weak self] in await self?.account.driveAccessToken() }
+        account.onSignedIn = { [weak self] in self?.signedIn() }
         account.onSignedOut = { [weak self] in
             self?.lastSavedPreferences = nil
-            self?.account.keySetup.reset()
-            self?.voiceTyping.forgetKeyOnThisMac()
+            // The key stays on this Mac: voice typing doesn't depend on the account.
         }
-        // No key yet: signing in also makes one in the user's own account.
-        account.wantsKeySetup = { [weak self] in !(self?.voiceTyping.hasKey ?? true) }
-        account.keySetup.signIn = { [weak self] in self?.account.signIn(setUpKey: true) }
-        account.keySetup.save = { [weak self] key in
-            // nil means the key works and is saved.
-            guard let self else { return "MicFlow closed" }
-            return await self.voiceTyping.saveKeyChecked(key)
-        }
-        account.keySetup.afterSave = { [weak self] in
-            guard let self else { return }
-            self.voiceTyping.enabled = true
-            self.syncPreferences()
-            if self.restartAfterKeySetup {
-                self.restartAfterKeySetup = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.restartToApplySettings() }
-            }
-        }
-        voiceTyping.isSignedIn = { [weak self] in !(self?.account.isConfigured ?? false) || (self?.account.signedInForVoice ?? false) }
+        // Voice typing needs only the person's own Gemini key now; signing in with Google is optional.
+        voiceTyping.isSignedIn = { true }
         voiceTyping.openHome = { [weak self] in
             guard let self else { return }
             UserDefaults.standard.set("home", forKey: "homePage")
             HomeWindow.show(model: self)
-        }
-        account.keySetup.fallbackEmail = { [weak self] in self?.account.user?.email }
-        account.keySetup.hasKey = { [weak self] in self?.voiceTyping.hasKey ?? false }
-        account.keySetup.useModel2 = { [weak self] in
-            self?.voiceTyping.engine = .chrome
-            self?.account.keySetup.reset()
         }
         // Any change to your preferences or settings is saved to your account a few seconds later.
         prefsWatch = voiceTyping.objectWillChange.map { _ in () }
             .merge(with: NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification).map { _ in () })
             .debounce(for: .seconds(4), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in self?.syncPreferences() }
+        pullTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.pullPreferences() }
+        }
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.pullPreferences() }
+        }
         evaluateLock()
         // New posts, update notes and pop-ups reach the app within half an hour.
         contentTimer = Timer.scheduledTimer(withTimeInterval: 30 * 60, repeats: true) { [weak self] _ in
@@ -642,7 +646,7 @@ final class BoostModel: ObservableObject {
         }
         guard let output = micVirtual else {
             stopEngine()
-            setStatus("BlackHole 2ch isn't installed. Run \"1 Install BlackHole 2ch\" from the MicFlow disk image, then restart your Mac.", error: true)
+            setStatus("The sound helpers aren't installed yet. Use \"Download and install\" at the top of this page, then restart your Mac.", error: true)
             return
         }
         guard let mic = selectedMic else {
@@ -681,7 +685,7 @@ final class BoostModel: ObservableObject {
         }
         guard let virtual = speakerVirtual else {
             stopSpeaker()
-            setSpeakerStatus("BlackHole 16ch isn't installed. Run \"2 Install BlackHole 16ch\" from the MicFlow disk image, then restart your Mac.", error: true)
+            setSpeakerStatus("The sound helpers aren't installed yet. Use \"Download and install\" at the top of the Sound page, then restart your Mac.", error: true)
             return
         }
         guard let speaker = selectedSpeaker else {

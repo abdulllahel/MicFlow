@@ -63,7 +63,7 @@ struct PlatformTag: View {
 
     var body: some View {
         Label(platform.title, systemImage: platform.systemImage)
-            .font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
+            .font(.inter(10, .bold)).foregroundStyle(.white)
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(platform.color, in: Capsule())
     }
@@ -321,7 +321,7 @@ struct FeatureRequestsPage: View {
                          detail: "Vote for the ideas you want most; no sign-in needed. Sign in with Google to post an idea or comment.",
                          chip: "\(store.requests.count) ideas", systemImage: "lightbulb.fill") {
                     PillButton(title: "Request a feature", systemImage: "plus", style: .ink) {
-                        if account.isSignedIn { composing = true } else { wantsToCompose = true; account.signIn(setUpKey: false) }
+                        if account.isSignedIn { composing = true } else { wantsToCompose = true; account.signIn() }
                     }
                     PillButton(title: "Refresh", systemImage: "arrow.clockwise", style: .orange, action: store.refresh)
                 }
@@ -330,13 +330,13 @@ struct FeatureRequestsPage: View {
                     PlatformFilter(requests: store.requests, selected: shownPlatform) { filter = .some($0) }
                     HStack(alignment: .firstTextBaseline) {
                         Text(showAll ? "All requests" : "Most wanted").font(.display(24))
-                        Text("by votes").font(.system(size: 12)).foregroundStyle(Palette.greyOnLight)
+                        Text("by votes").font(.inter(12)).foregroundStyle(Palette.greyOnLight)
                         Spacer()
                         if store.isLoading { ProgressView().controlSize(.small) }
                     }
                     if shown.isEmpty, !store.isLoading || !store.requests.isEmpty {
                         Text(shownPlatform == nil ? "No requests yet. Be the first to ask for something!"
-                             : "No \(shownPlatform!.title) requests yet.").font(.system(size: 13))
+                             : "No \(shownPlatform!.title) requests yet.").font(.inter(13))
                             .foregroundStyle(Palette.greyOnLight)
                     }
                     ForEach(showAll ? shown : Array(shown.prefix(5))) { request in
@@ -413,9 +413,9 @@ private struct RequestRow: View {
         HStack(spacing: 12) {
             Button(action: open) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(request.title).font(.system(size: 15, weight: .bold)).foregroundStyle(Palette.ink)
+                    Text(request.title).font(.inter(15, .bold)).foregroundStyle(Palette.panelText)
                         .multilineTextAlignment(.leading)
-                    Text(request.body).font(.system(size: 12)).foregroundStyle(Palette.greyOnLight).lineLimit(2)
+                    Text(request.body).font(.inter(12)).foregroundStyle(Palette.greyOnLight).lineLimit(2)
                         .multilineTextAlignment(.leading)
                     HStack(spacing: 10) {
                         PlatformTag(platform: request.requestPlatform)
@@ -423,7 +423,7 @@ private struct RequestRow: View {
                         if !request.images.isEmpty { Label("\(request.images.count)", systemImage: "photo") }
                         Text(request.author_name ?? "")
                     }
-                    .font(.system(size: 11)).foregroundStyle(Palette.greyOnLight)
+                    .font(.inter(11)).foregroundStyle(Palette.greyOnLight)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -432,10 +432,10 @@ private struct RequestRow: View {
             if canDelete {
                 Button(action: delete) {
                     Image(systemName: "trash")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.inter(14, .semibold))
                         .foregroundStyle(Palette.orange)
                         .frame(width: 40, height: 50)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .background(Palette.panelRaised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .help("Delete this request")
@@ -464,12 +464,12 @@ private struct VoteButtons: View {
         let mine = myVote == value
         return Button { vote(value) } label: {
             VStack(spacing: 2) {
-                Image(systemName: mine ? icon + ".fill" : icon).font(.system(size: 15, weight: .semibold))
-                Text("\(count)").font(.system(size: 12, weight: .bold))
+                Image(systemName: mine ? icon + ".fill" : icon).font(.inter(15, .semibold))
+                Text("\(count)").font(.inter(12, .bold))
             }
             .foregroundStyle(mine ? .white : color)
             .frame(width: 52, height: 50)
-            .background(mine ? color : Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(mine ? color : Palette.panelRaised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -523,15 +523,15 @@ private struct RequestDetail: View {
                 HStack(spacing: 10) {
                     Avatar(url: request.author_avatar)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(request.author_name ?? "MicFlow user").font(.system(size: 13, weight: .semibold))
+                        Text(request.author_name ?? "MicFlow user").font(.inter(13, .semibold))
                         Text(request.created_at.formatted(date: .abbreviated, time: .shortened))
-                            .font(.system(size: 11)).foregroundStyle(Palette.greyOnLight)
+                            .font(.inter(11)).foregroundStyle(Palette.greyOnLight)
                     }
                     Spacer()
                     PlatformTag(platform: request.requestPlatform)
                 }
                 Text(request.title).font(.display(30))
-                Text(request.body).font(.system(size: 14)).lineSpacing(3).textSelection(.enabled)
+                Text(request.body).font(.inter(14)).lineSpacing(3).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                 ForEach(request.images, id: \.self) { path in
                     AsyncImage(url: Backend.publicFileURL(path)) { image in
@@ -544,27 +544,27 @@ private struct RequestDetail: View {
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
             }
-            .foregroundStyle(Palette.ink)
+            .foregroundStyle(Palette.panelText)
             WhitePanel {
                 Text("Comments").font(.display(22))
                 let list = store.comments[request.id] ?? []
-                if list.isEmpty { Text("No comments yet.").font(.system(size: 13)).foregroundStyle(Palette.greyOnLight) }
+                if list.isEmpty { Text("No comments yet.").font(.inter(13)).foregroundStyle(Palette.greyOnLight) }
                 ForEach(list) { comment in
                     HStack(alignment: .top, spacing: 10) {
                         Avatar(url: comment.author_avatar)
                         VStack(alignment: .leading, spacing: 2) {
                             HStack {
-                                Text(comment.author_name ?? "MicFlow user").font(.system(size: 12, weight: .semibold))
+                                Text(comment.author_name ?? "MicFlow user").font(.inter(12, .semibold))
                                 Text(comment.created_at.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.system(size: 11)).foregroundStyle(Palette.greyOnLight)
+                                    .font(.inter(11)).foregroundStyle(Palette.greyOnLight)
                             }
-                            Text(comment.body).font(.system(size: 13)).textSelection(.enabled)
+                            Text(comment.body).font(.inter(13)).textSelection(.enabled)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
                         if store.canDelete(authorID: comment.author_id) {
                             Button { commentToDelete = comment } label: {
-                                Image(systemName: "trash").font(.system(size: 11)).foregroundStyle(Palette.greyOnLight)
+                                Image(systemName: "trash").font(.inter(11)).foregroundStyle(Palette.greyOnLight)
                             }
                             .buttonStyle(.plain).help("Delete this comment")
                         }
@@ -577,7 +577,7 @@ private struct RequestDetail: View {
                     }
                 } else {
                     PillButton(title: "Sign in with Google to comment", systemImage: "person.crop.circle", style: .ink) {
-                        account.signIn(setUpKey: false)
+                        account.signIn()
                     }
                 }
             }
@@ -723,21 +723,19 @@ struct AccountCard: View {
                     } placeholder: { Circle().fill(Palette.cream) }
                     .frame(width: 34, height: 34).clipShape(Circle())
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(account.user?.name ?? "Signed in").font(.system(size: 13, weight: .semibold))
-                        Text(account.user?.email ?? "").font(.system(size: 11)).foregroundStyle(Palette.greyOnDark)
+                        Text(account.user?.name ?? "Signed in").font(.inter(13, .semibold))
+                        Text(account.user?.email ?? "").font(.inter(11)).foregroundStyle(Palette.greyOnDark)
                     }
                     Spacer()
                     PillButton(title: "Sign out", style: .outline, action: account.signOut)
                 }
                 Note(text: "Your instructions, words, mix-ups and API key are saved to your account, so they come back if you reinstall MicFlow or use another Mac. Only your sign-in can read them back, though the app's maker runs the database and could technically see them.")
             } else {
-                // No key yet: signing in also makes one, so Google's screens are explained first.
                 PillButton(title: account.isWorking ? "Signing in…" : "Sign in with Google", systemImage: "person.crop.circle",
-                           style: .cream) { account.wantsKeySetup() ? account.keySetup.begin() : account.signIn(setUpKey: false) }
-                Note(text: "Optional. Signing in saves your instructions, words, mix-ups and API key to your account, and lets you post feature requests and comments. No API key yet? Signing in also sets one up for you.")
+                           style: .cream) { account.signIn() }
+                Note(text: "Optional. Signing in saves your instructions, words, mix-ups and API key to your account, and lets you post feature requests and comments.")
             }
             if let message = account.message { Note(text: message, isError: true) }
-            KeySetupStatus(flow: account.keySetup)
         }
     }
 }

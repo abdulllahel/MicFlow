@@ -13,22 +13,20 @@ if strings build/MicFlow.app/Contents/MacOS/MicFlow | grep -q "ContentAdminView\
 fi
 
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Info.plist)
-CASKROOM="$(brew --prefix)/Caskroom"
-PKG_2CH=$(ls "$CASKROOM"/blackhole-2ch/*/BlackHole2ch-*.pkg | tail -1)
-PKG_16CH=$(ls "$CASKROOM"/blackhole-16ch/*/BlackHole16ch-*.pkg | tail -1)
-
 STAGE=build/dmg
 rm -rf "$STAGE"
 mkdir -p "$STAGE" dist
 ditto "build/MicFlow.app" "$STAGE/MicFlow.app"
 ln -s /Applications "$STAGE/Applications"
-cp "$PKG_2CH" "$STAGE/1 Install BlackHole 2ch.pkg"
-cp "$PKG_16CH" "$STAGE/2 Install BlackHole 16ch.pkg"
 cp "Packaging/Read Me First.txt" "$STAGE/"
-# The license text ships inside each BlackHole installer.
-pkgutil --expand "$PKG_2CH" build/obj/pkg-2ch
-cp build/obj/pkg-2ch/Resources/LICENSE "$STAGE/BlackHole License.txt"
-rm -rf build/obj/pkg-2ch
+# The BlackHole sound helpers are no longer in the disk image: MicFlow downloads them when the
+# person turns on mic or speaker boost (see Sources/SoundHelperInstaller.swift).
+# "Start Here" opens the install guide on the website, which the first-launch warning needs.
+cat > "$STAGE/Start Here - Install Guide.webloc" <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>URL</key><string>https://micflow.abdullahel.com/guide.html</string></dict></plist>
+XML
 
 DMG="dist/MicFlow $VERSION.dmg"
 rm -f "$DMG"

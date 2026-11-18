@@ -54,7 +54,7 @@ enum SettingsSync {
         "captureShortcuts", "captureCopyToClipboard", "captureTimerSeconds", "captureRecordMicrophone", "captureShortcutMap",
         // Voice typing
         "voiceTypingEnabled", "voiceTypingHotkey", "voiceTypingHotkeyName", "voiceTypingEnglishHotkey",
-        "voiceTypingEnglishHotkeyName", "voiceTypingEngine", "voiceTypingFixMixUps", "voiceTypingPolish",
+        "voiceTypingEnglishHotkeyName", "voiceTypingEngine", "voiceTypingTapToTalk", "voiceTypingLivePreview", "voiceTypingFixMixUps", "voiceTypingPolish",
         // Look
         "homeDarkTheme", "selectedTab", "sidebarExpanded", "skipGoogleKeyGuide",
     ]

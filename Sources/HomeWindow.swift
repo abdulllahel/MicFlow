@@ -31,18 +31,29 @@ enum HomeWindow {
 
 /// Colors from the style guide.
 enum Palette {
-    static let pink = Color(hex: 0xF66399)
-    static let yellow = Color(hex: 0xFFB413)
-    static let orange = Color(hex: 0xF2621F)
-    static let orangeLight = Color(hex: 0xFF8A3D)
-    static let lavender = Color(hex: 0xB99AF6)
-    static let cream = Color(hex: 0xFBEBC9)
-    static let mint = Color(hex: 0xDDF3E2)
-    static let mintText = Color(hex: 0x2E9E57)
-    static let ink = Color(hex: 0x141414)
+    // Graphite and one teal accent, with a warm off-white for buttons and text (inspired by Monologue).
+    static let pink = Color(hex: 0x19D0E8)          // the accent: switches, highlights, icons
+    static let yellow = Color(hex: 0x19D0E8)        // accent fills (buttons, bars)
+    static let orange = Color(hex: 0xFF8904)        // warnings and errors
+    static let orangeLight = Color(hex: 0xFFB257)
+    static let lavender = Color(hex: 0x8FA3AD)
+    static let cream = Color(hex: 0xF2F0ED)         // buttons and selected pills
+    static let mint = Color(hex: 0x102B1B)
+    static let mintText = Color(hex: 0x6FE39A)
+    static let ink = Color(hex: 0x111111)           // text on light fills
     static let white = Color.white
-    static let greyOnDark = Color(hex: 0x9A9A9A)
-    static let greyOnLight = Color(hex: 0x8A8A8A)
+    static let greyOnDark = Color(hex: 0xA6A6A6)
+    static let greyOnLight = Color(hex: 0x8E8E8E)
+    /// Big cards: a soft teal gradient with dark teal text.
+    static let heroTop = Color(hex: 0x8FC7C9)
+    static let heroBottom = Color(hex: 0x5E9DA3)
+    static let heroInk = Color(hex: 0x0D2A2E)
+    static let hero = LinearGradient(colors: [heroTop, heroBottom], startPoint: .top, endPoint: .bottom)
+    /// Panels in the graphite frame.
+    static let panel = Color(hex: 0x181818)
+    static let panelRaised = Color.white.opacity(0.07)
+    static let panelText = Color(hex: 0xF2F0ED)
+    static let hair = Color.white.opacity(0.10)
 }
 
 /// The two frames the sun/moon switch swaps between.
@@ -53,10 +64,11 @@ struct HomeTheme {
     let bar: Color
     let barTop: Color
 
-    static let dark = HomeTheme(frame: Color(hex: 0x141414), card: Color(hex: 0x232323), selected: Color(hex: 0x2E2E2E),
+    static let dark = HomeTheme(frame: Color(hex: 0x111111), card: Color(hex: 0x1B1B1B), selected: Color(hex: 0x282828),
                                 bar: Color(hex: 0x2C2C2C), barTop: Color(hex: 0x3A3A3A))
-    static let green = HomeTheme(frame: Color(hex: 0x2B5036), card: Color(hex: 0x335E41), selected: Color(hex: 0x3B6A4A),
-                                 bar: Color(hex: 0x2B5036), barTop: Color(hex: 0x44735A))
+    /// The same graphite with a deep teal tint.
+    static let green = HomeTheme(frame: Color(hex: 0x0D1719), card: Color(hex: 0x14262A), selected: Color(hex: 0x1B3338),
+                                 bar: Color(hex: 0x14262A), barTop: Color(hex: 0x1F4A52))
 }
 
 extension Color {
@@ -67,8 +79,14 @@ extension Color {
 
 /// The chunky, slightly condensed display type.
 extension Font {
-    static func display(_ size: CGFloat, _ weight: Font.Weight = .heavy) -> Font {
-        .system(size: size, weight: weight).width(.condensed)
+    /// Inter, the body font (bundled with the app, see InterFont).
+    static func inter(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .custom("Inter", size: size).weight(weight)
+    }
+
+    /// Headlines in a serif, like the reference (its UI text is monospaced).
+    static func display(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight == .heavy ? .regular : weight, design: .serif)
     }
 }
 
@@ -97,14 +115,14 @@ struct CardHeader: View {
     var body: some View {
         HStack(spacing: 10) {
             Circle().fill(Palette.cream).frame(width: 32, height: 32)
-                .overlay(Image(systemName: systemImage).font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.pink))
+                .overlay(Image(systemName: systemImage).font(.inter(13, .bold)).foregroundStyle(Palette.pink))
             VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.system(size: 14, weight: .semibold))
-                if let subtitle { Text(subtitle).font(.system(size: 11)).foregroundStyle(Palette.greyOnDark) }
+                Text(title).font(.inter(14, .semibold))
+                if let subtitle { Text(subtitle).font(.inter(11)).foregroundStyle(Palette.greyOnDark) }
             }
             Spacer()
             if let action {
-                Button(action: onAction) { Image(systemName: action).font(.system(size: 14, weight: .medium)) }
+                Button(action: onAction) { Image(systemName: action).font(.inter(14, .medium)) }
                     .buttonStyle(.plain)
             }
         }
@@ -121,11 +139,11 @@ struct Pill: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.inter(12, .semibold))
                 .padding(.horizontal, 14).padding(.vertical, 7)
-                .foregroundStyle(selected ? (onDark ? Palette.ink : Palette.white) : (onDark ? Palette.white : Palette.ink))
-                .background(selected ? (onDark ? Palette.cream : Palette.ink) : .clear, in: Capsule())
-                .overlay(Capsule().strokeBorder(onDark && !selected ? Color.white.opacity(0.18) : .clear))
+                .foregroundStyle(selected ? Palette.ink : Palette.white)
+                .background(selected ? Palette.cream : .clear, in: Capsule())
+                .overlay(Capsule().strokeBorder(!selected ? Color.white.opacity(0.18) : .clear))
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -140,9 +158,7 @@ private struct HomeView: View {
     @ObservedObject var log: DictationLog
     /// Watched too, so Home and the sidebar change the moment you sign in or out.
     @ObservedObject var account: Account
-    /// Green is the default; the switch turns on the dark frame.
-    @AppStorage("homeDarkTheme") private var dark = false
-    @AppStorage("homePage") private var page = Page.home
+    @AppStorage("homePage") private var page = Page.voice
 
     /// Home and Dictionary, then every tab of the menu bar panel, then General.
     enum Page: String, CaseIterable {
@@ -180,31 +196,32 @@ private struct HomeView: View {
         var shortTitle: String { self == .voice ? "Voice" : self == .dictionary ? "Prefs" : title }
     }
 
-    var theme: HomeTheme { dark ? .dark : .green }
+    /// One look: the deep teal-tinted graphite.
+    var theme: HomeTheme { .green }
 
     /// Voice Typing is only there while you're signed in; a remembered Voice page opens Home instead.
-    private var shownPage: Page { page == .voice && !account.showsVoiceTab ? .home : page }
+    /// A key or a Google sign-in unlocks Home and Preferences.
+    private var unlocked: Bool { voice.hasKey || account.isSignedIn }
+    private var shownPage: Page { !unlocked && (page == .home || page == .dictionary) ? .voice : page }
 
     var body: some View {
         HStack(spacing: 10) {
-            Sidebar(page: $page, dark: $dark, theme: theme, account: model.account)
+            Sidebar(page: $page, theme: theme, account: model.account, unlocked: unlocked)
             VStack(spacing: 10) {
-                // Until voice typing has a key, every page but Home points back to Home's setup.
-                if shownPage != .home { VoiceSetupBanner(voice: voice, account: model.account, openHome: { page = .home }) }
+                LoginBanner(account: model.account)
                 switch shownPage {
                 case .home:
                     VStack(spacing: 10) {
                         SetupBanner(voice: voice, openVoice: { page = .voice })
                         UpdateBanner(updater: model.updater, store: model.siteContent)
-                        if voiceNeedsSetup(voice, model.account) {
-                            HomeKeySetup(voice: voice, account: model.account, theme: theme)
-                        } else {
-                            HomeBoard(voice: voice, log: log, theme: theme, openDictionary: { page = .dictionary })
-                        }
+                        SettingsRestartBanner(model: model)
+                        HomeBoard(voice: voice, log: log, theme: theme, openDictionary: { page = .dictionary })
                     }
                 case .dictionary: DictionaryPage(voice: voice, theme: theme)
                 case .sound: SoundPage(model: model, theme: theme)
-                case .voice: VoicePage(voice: voice, theme: theme, openDictionary: { page = .dictionary }, account: model.account)
+                case .voice:
+                    if voice.needsKeySetup { KeyOnboarding(voice: voice, account: model.account, theme: theme) }
+                    else { VoicePage(voice: voice, theme: theme, openDictionary: { page = .dictionary }, account: model.account) }
                 case .mouse: MousePage(model: model, theme: theme)
                 case .keyboard: KeyboardPage(model: model, theme: theme)
                 case .figma: FigmaPage(model: model, theme: theme)
@@ -216,41 +233,76 @@ private struct HomeView: View {
             .padding(.trailing, 10)
         }
         .background(theme.frame)
-        .background(KeyGuideHost(flow: model.account.keySetup))
+        // Home is the first page once there is a key or a sign-in.
+        .onAppear { if unlocked { page = .home } }
+        .onChange(of: unlocked) { if $0 { page = .home } }
         .overlay {
             if model.locked, let blocker = model.siteContent.content.block {
                 BlockerView(blocker: blocker, updater: model.updater, signIn: model.signInAction)
             }
         }
         .ignoresSafeArea()
-        .animation(.easeInOut(duration: 0.25), value: dark)
     }
 }
 
 private struct Sidebar: View {
     @Binding var page: HomeView.Page
-    @Binding var dark: Bool
     let theme: HomeTheme
     @ObservedObject var account: Account
+    /// True once there is a key or a Google sign-in: Home and Preferences are then available.
+    let unlocked: Bool
     /// Wide: icons with their names beside them. Narrow: names under the icons.
     @AppStorage("sidebarExpanded") private var expanded = true
+    @AppStorage("otherOptionsOpen") private var otherOpen = false
+    /// Everything but Voice typing and Settings.
+    static let otherPages: [HomeView.Page] = [.sound, .mouse, .keyboard, .figma, .capture]
+
+    /// The "Other options" row: shows or hides the other pages.
+    private var otherOptionsToggle: some View {
+        let open = otherOpen || Self.otherPages.contains(page)
+        return Button { otherOpen.toggle() } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "square.grid.2x2.fill")
+                    .font(.inter(14, .semibold)).foregroundStyle(Palette.white.opacity(0.85))
+                    .frame(width: 30, height: 30).background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                if expanded {
+                    Text("Other options").font(.inter(13, .medium)).foregroundStyle(Palette.white.opacity(0.85))
+                    Spacer(minLength: 0)
+                    Image(systemName: open ? "chevron.up" : "chevron.down").font(.inter(11, .bold)).foregroundStyle(Palette.white.opacity(0.6))
+                }
+            }
+            .padding(.horizontal, 6).padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: expanded ? .leading : .center)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Other options")
+    }
 
     var body: some View {
         VStack(alignment: expanded ? .leading : .center, spacing: expanded ? 4 : 6) {
             header.padding(.top, expanded ? 46 : 38).padding(.bottom, expanded ? 14 : 8)
-            item(.home)
-            // Voice typing is the main feature, so it comes right after Home (once you're signed in).
-            if account.showsVoiceTab { item(.voice) }
-            Capsule().fill(Color.white.opacity(0.15)).frame(width: expanded ? nil : 28, height: 2)
-                .padding(.vertical, 6).padding(.horizontal, expanded ? 8 : 0)
-            ForEach([HomeView.Page.sound, .mouse, .keyboard, .figma, .capture, .dictionary], id: \.self) { item($0) }
+            if unlocked {
+                // With a key or a Google sign-in: Home first, then every page as a normal tab.
+                item(.home)
+                item(.voice)
+                ForEach([HomeView.Page.dictionary] + Self.otherPages, id: \.self) { item($0) }
+            } else {
+                // Before that: Voice typing (where the key is added), and the pages that work without one
+                // inside "Other options". Home and Preferences need a key or an account.
+                item(.voice)
+                otherOptionsToggle
+                if otherOpen || Self.otherPages.contains(page) {
+                    ForEach(Self.otherPages, id: \.self) { item($0).padding(.leading, expanded ? 14 : 0) }
+                }
+            }
             Spacer(minLength: 8)
             item(.general)
             Group {
                 if expanded {
-                    HStack(spacing: 8) { ProfileButton(account: account, openHome: { page = .home }); ThemeSwitch(dark: $dark); Spacer(); collapseButton }
+                    HStack(spacing: 8) { ProfileButton(account: account, openHome: { page = .home }); Spacer(); collapseButton }
                 } else {
-                    VStack(spacing: 8) { ProfileButton(account: account, openHome: { page = .home }); collapseButton; ThemeSwitch(dark: $dark) }
+                    VStack(spacing: 8) { ProfileButton(account: account, openHome: { page = .home }); collapseButton }
                 }
             }
             .padding(.top, 6)
@@ -280,7 +332,7 @@ private struct Sidebar: View {
     private var collapseButton: some View {
         Button { expanded.toggle() } label: {
             Image(systemName: expanded ? "sidebar.left" : "sidebar.right")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.inter(13, .semibold))
                 .foregroundStyle(Palette.white.opacity(0.85))
                 .frame(width: 28, height: 28)
                 .background(Color.white.opacity(0.10), in: Circle())
@@ -300,19 +352,18 @@ private struct Sidebar: View {
         return Button { page = target } label: {
             HStack(spacing: 10) {
                 Image(systemName: target.systemImage)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(selected ? Palette.pink : Palette.white.opacity(0.85))
+                    .font(.inter(14, .semibold))
+                    .foregroundStyle(selected ? Palette.pink : Palette.white.opacity(0.7))
                     .frame(width: 30, height: 30)
-                    .background(selected ? Palette.white : Color.white.opacity(0.08),
-                                in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 Text(target.title)
-                    .font(.system(size: 13, weight: selected ? .bold : .medium))
-                    .foregroundStyle(selected ? Palette.ink : Palette.white.opacity(0.85))
+                    .font(.inter(13, selected ? .bold : .medium))
+                    .foregroundStyle(selected ? Palette.cream : Palette.white.opacity(0.7))
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 6).padding(.vertical, 5)
-            .background(selected ? Palette.cream : .clear, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .background(selected ? Color.white.opacity(0.09) : .clear, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).strokeBorder(selected ? Palette.hair : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -326,15 +377,15 @@ private struct Sidebar: View {
         return Button { page = target } label: {
             VStack(spacing: 4) {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(selected ? Palette.cream : Color.white.opacity(0.08))
+                    .fill(selected ? Color.white.opacity(0.10) : Color.white.opacity(0.04))
                     .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .strokeBorder(Color.white.opacity(selected ? 0 : 0.10)))
                     .overlay(Image(systemName: target.systemImage)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.inter(15, .semibold))
                         .foregroundStyle(selected ? Palette.pink : Color.white.opacity(0.85)))
                     .frame(width: 38, height: 38)
                 Text(target.shortTitle)
-                    .font(.system(size: 9.5, weight: selected ? .bold : .medium))
+                    .font(.inter(9.5, selected ? .bold : .medium))
                     .foregroundStyle(selected ? Palette.white : Palette.white.opacity(0.6))
                     .lineLimit(1)
                     .fixedSize()
@@ -397,7 +448,6 @@ private struct EyesShape: Shape {
     }
 }
 
-/// The switch at the bottom of the sidebar: forest green frame (the default) or dark frame.
 private struct ThemeSwitch: View {
     @Binding var dark: Bool
 
@@ -406,7 +456,7 @@ private struct ThemeSwitch: View {
             ZStack(alignment: dark ? .trailing : .leading) {
                 Capsule().fill(Color.white.opacity(0.12)).frame(width: 52, height: 28)
                 Circle().fill(Palette.white).frame(width: 24, height: 24).padding(2)
-                    .overlay(Image(systemName: dark ? "moon.fill" : "leaf.fill").font(.system(size: 11))
+                    .overlay(Image(systemName: dark ? "moon.fill" : "leaf.fill").font(.inter(11))
                         .foregroundStyle(dark ? Palette.ink : Color(hex: 0x2B5036)))
             }
         }
@@ -495,7 +545,7 @@ private struct ActivityCard: View {
                     ForEach(cells(lead: lead, days: days)) { cell in
                         switch cell.kind {
                         case .weekday(let letter):
-                            Text(letter).font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.greyOnDark)
+                            Text(letter).font(.inter(10, .semibold)).foregroundStyle(Palette.greyOnDark)
                         case .blank:
                             Circle().strokeBorder(Color.white.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                                 .frame(width: 32, height: 32)
@@ -503,7 +553,7 @@ private struct ActivityCard: View {
                             let day = calendar.date(byAdding: .day, value: number - 1, to: month)!
                             let active = dictated.contains(day)
                             Text("\(number)")
-                                .font(.system(size: 12, weight: .bold))
+                                .font(.inter(12, .bold))
                                 .foregroundStyle(active ? Palette.white : Palette.ink.opacity(day > today ? 0.4 : 1))
                                 .frame(width: 32, height: 32)
                                 .background(active ? Palette.pink : Palette.cream, in: Circle())
@@ -514,12 +564,12 @@ private struct ActivityCard: View {
                 HStack {
                     Button { monthOffset -= 1 } label: { Image(systemName: "arrow.left") }.buttonStyle(.plain)
                     Spacer()
-                    Text(month.formatted(.dateTime.month(.wide).year())).font(.system(size: 13, weight: .semibold))
+                    Text(month.formatted(.dateTime.month(.wide).year())).font(.inter(13, .semibold))
                     Spacer()
                     Button { monthOffset = min(0, monthOffset + 1) } label: { Image(systemName: "arrow.right") }
                         .buttonStyle(.plain).opacity(monthOffset < 0 ? 1 : 0.3)
                 }
-                .font(.system(size: 15, weight: .medium))
+                .font(.inter(15, .medium))
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -537,11 +587,11 @@ private struct TodayCard: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("Today · \(Date().formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.inter(11, .semibold))
                 Spacer()
                 HStack(spacing: 5) {
                     Circle().fill(Palette.pink).frame(width: 7, height: 7)
-                    Text("\(log.averageWPM) WPM").font(.system(size: 11, weight: .bold))
+                    Text("\(log.averageWPM) WPM").font(.inter(11, .bold))
                 }
                 .padding(.horizontal, 10).padding(.vertical, 5)
                 .background(Palette.white, in: Capsule())
@@ -559,19 +609,20 @@ private struct TodayCard: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
                 } label: {
                     Text(copied ? "Copied" : "Copy last")
-                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                        .font(.inter(12, .semibold)).foregroundStyle(.white)
                         .padding(.horizontal, 14).padding(.vertical, 7)
                         .background(Palette.orange, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(log.entries.isEmpty)
-                Button("History", action: showHistory).buttonStyle(.plain).font(.system(size: 12, weight: .semibold))
+                Button("History", action: showHistory).buttonStyle(.plain).font(.inter(12, .semibold))
                 Spacer()
             }
         }
-        .foregroundStyle(Palette.ink)
+        .foregroundStyle(Palette.heroInk)
         .padding(18)
-        .background(Palette.yellow, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(Palette.hero, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.white.opacity(0.18)))
         .overlay(alignment: .bottomTrailing) { Sticker().offset(x: 6, y: 10) }
     }
 }
@@ -582,10 +633,10 @@ private struct Sticker: View {
         RoundedRectangle(cornerRadius: 14, style: .continuous)
             .fill(Palette.pink)
             .frame(width: 70, height: 62)
-            .overlay(Image(systemName: "mic.fill").font(.system(size: 26, weight: .bold)).foregroundStyle(Palette.cream))
+            .overlay(Image(systemName: "mic.fill").font(.inter(26, .bold)).foregroundStyle(Palette.cream))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Palette.white, lineWidth: 3))
             .overlay(alignment: .topTrailing) {
-                Image(systemName: "waveform").font(.system(size: 13, weight: .heavy)).foregroundStyle(Palette.ink)
+                Image(systemName: "waveform").font(.inter(13, .heavy)).foregroundStyle(Palette.ink)
                     .padding(5).background(Palette.yellow, in: Circle())
                     .overlay(Circle().strokeBorder(Palette.ink, lineWidth: 1.5))
                     .offset(x: 8, y: -8)
@@ -606,15 +657,15 @@ private struct LanguagesCard: View {
         DarkCard(theme: theme) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("Languages").font(.system(size: 14, weight: .semibold))
+                    Text("Languages").font(.inter(14, .semibold))
                     Spacer()
-                    Image(systemName: "chevron.down").font(.system(size: 12, weight: .semibold))
+                    Image(systemName: "chevron.down").font(.inter(12, .semibold))
                 }
                 row("English", used: any && share < 1, percent: any ? 1 - share : 0)
                 row("বাংলা Bengali", used: share > 0, percent: share)
                 Spacer(minLength: 0)
                 Button(action: openDictionary) {
-                    Label("Add a word", systemImage: "plus").font(.system(size: 12, weight: .semibold))
+                    Label("Add a word", systemImage: "plus").font(.inter(12, .semibold))
                 }
                 .buttonStyle(.plain)
             }
@@ -623,11 +674,11 @@ private struct LanguagesCard: View {
 
     private func row(_ title: String, used: Bool, percent: Double) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: used ? "checkmark.square.fill" : "square").font(.system(size: 14))
+            Image(systemName: used ? "checkmark.square.fill" : "square").font(.inter(14))
                 .foregroundStyle(used ? Palette.white : Palette.greyOnDark)
-            Text(title).font(.system(size: 13))
+            Text(title).font(.inter(13))
             Text(percent.formatted(.percent.precision(.fractionLength(0))))
-                .font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
+                .font(.inter(10, .bold)).foregroundStyle(.white)
                 .padding(.horizontal, 6).padding(.vertical, 2)
                 .background(Palette.pink, in: Capsule())
             Spacer()
@@ -644,9 +695,11 @@ private struct DictationsPanel: View {
     @Binding var listMode: Bool
     let openDictionary: () -> Void
     @State private var search = ""
+    /// Which device's dictations to show: all, mac or android.
+    @AppStorage("historyDeviceFilter") private var historyDeviceFilter = "all"
 
     private var matches: [DictationLog.Entry] {
-        let all = log.entries.reversed()
+        let all = log.entries.reversed().filter { historyDeviceFilter == "all" || ($0.platform ?? "mac") == historyDeviceFilter }
         return search.isEmpty ? Array(all) : all.filter { $0.text.localizedCaseInsensitiveContains(search) }
     }
 
@@ -655,7 +708,7 @@ private struct DictationsPanel: View {
             HStack(spacing: 12) {
                 HStack(spacing: 6) {
                     Text(Date().formatted(.dateTime.month(.wide))) + Text(", \(Date().formatted(.dateTime.year()))")
-                    Image(systemName: "chevron.down").font(.system(size: 14, weight: .bold))
+                    Image(systemName: "chevron.down").font(.inter(14, .bold))
                 }
                 .font(.display(30))
                 Spacer()
@@ -664,10 +717,17 @@ private struct DictationsPanel: View {
                     Pill(title: "List", selected: listMode, onDark: false) { listMode = true }
                 }
                 .padding(3)
-                .background(Color(hex: 0xF2F2F0), in: Capsule())
+                .background(Palette.panelRaised, in: Capsule())
+                HStack(spacing: 2) {
+                    Pill(title: "All", selected: historyDeviceFilter == "all", onDark: false) { historyDeviceFilter = "all" }
+                    Pill(title: "Mac", selected: historyDeviceFilter == "mac", onDark: false) { historyDeviceFilter = "mac" }
+                    Pill(title: "Android", selected: historyDeviceFilter == "android", onDark: false) { historyDeviceFilter = "android" }
+                }
+                .padding(3)
+                .background(Palette.panelRaised, in: Capsule())
                 Button(action: openDictionary) {
                     Label("Add word", systemImage: "plus")
-                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.ink)
+                        .font(.inter(12, .semibold)).foregroundStyle(Palette.ink)
                         .padding(.horizontal, 14).padding(.vertical, 8)
                         .background(Palette.yellow, in: Capsule())
                 }
@@ -677,27 +737,29 @@ private struct DictationsPanel: View {
                 Image(systemName: "magnifyingglass").foregroundStyle(Palette.greyOnLight)
                 TextField("Search your dictations…", text: $search).textFieldStyle(.plain)
             }
-            .font(.system(size: 13))
+            .font(.inter(13))
             .padding(.horizontal, 14).padding(.vertical, 9)
-            .background(Color(hex: 0xF2F2F0), in: Capsule())
+            .background(Palette.panelRaised, in: Capsule())
             .frame(maxWidth: 360)
 
             if listMode || !search.isEmpty {
                 ListView(entries: matches)
             } else {
-                DayColumns(log: log)
+                DayColumns(log: log, deviceFilter: historyDeviceFilter)
             }
         }
-        .foregroundStyle(Palette.ink)
+        .foregroundStyle(Palette.panelText)
         .padding(22)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Palette.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .environment(\.colorScheme, .light)
+        .background(Palette.panel, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Palette.hair))
+        .environment(\.colorScheme, .dark)
     }
 }
 
 private struct DayColumns: View {
     @ObservedObject var log: DictationLog
+    let deviceFilter: String
 
     var body: some View {
         let calendar = Calendar.current
@@ -706,14 +768,14 @@ private struct DayColumns: View {
         HStack(alignment: .top, spacing: 0) {
             ForEach(days.indices, id: \.self) { index in
                 let day = days[index]
-                let entries = log.entries.filter { calendar.isDate($0.date, inSameDayAs: day) }.reversed()
+                let entries = log.entries.filter { calendar.isDate($0.date, inSameDayAs: day) && (deviceFilter == "all" || ($0.platform ?? "mac") == deviceFilter) }.reversed()
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(alignment: .firstTextBaseline, spacing: 1) {
                         Text("\(calendar.component(.day, from: day))").font(.display(22))
-                        Text("/\(day.formatted(.dateTime.weekday(.abbreviated)))").font(.system(size: 12))
+                        Text("/\(day.formatted(.dateTime.weekday(.abbreviated)))").font(.inter(12))
                             .foregroundStyle(Palette.greyOnLight)
                         if index == 0 {
-                            Text("Today").font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
+                            Text("Today").font(.inter(10, .bold)).foregroundStyle(.white)
                                 .padding(.horizontal, 7).padding(.vertical, 2).background(Palette.pink, in: Capsule())
                                 .padding(.leading, 6)
                         }
@@ -766,9 +828,9 @@ private struct EmptySlot: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            Image(systemName: "mic.badge.plus").font(.system(size: 15, weight: .semibold))
+            Image(systemName: "mic.badge.plus").font(.inter(15, .semibold))
                 .frame(width: 30, height: 30).background(Color.white.opacity(0.7), in: Circle())
-            Text(today ? "Hold your key\nto dictate" : "No dictations").font(.system(size: 12, weight: .semibold))
+            Text(today ? "Hold your key\nto dictate" : "No dictations").font(.inter(12, .semibold))
                 .multilineTextAlignment(.center)
         }
         .foregroundStyle(Palette.mintText)
@@ -797,14 +859,14 @@ private struct DictationCard: View {
         } label: {
             VStack(alignment: .leading, spacing: 0) {
                 if style == .orange || style == .pink {
-                    Texture(base: style == .orange ? Palette.orange : Palette.pink,
-                            light: style == .orange ? Palette.orangeLight : Color(hex: 0xFFB3CF))
+                    Texture(base: style == .orange ? Color(hex: 0x16383E) : Color(hex: 0x123027),
+                            light: style == .orange ? Color(hex: 0x1F5A64) : Color(hex: 0x1C4A3A))
                         .frame(height: 46)
                 }
                 VStack(alignment: .leading, spacing: 5) {
                     Text(copied ? "Copied" : "\(entry.date.formatted(date: .omitted, time: .shortened)) · \(entry.words) words")
-                        .font(.system(size: 10, weight: .semibold)).opacity(0.75)
-                    Text(entry.text).font(.system(size: 13, weight: .bold)).lineLimit(4)
+                        .font(.inter(10, .semibold)).opacity(0.75)
+                    Text(entry.text).font(.inter(13, .bold)).lineLimit(4)
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -820,9 +882,9 @@ private struct DictationCard: View {
 
     private var background: Color {
         switch style {
-        case .orange: return Palette.orange
-        case .lavender: return Palette.lavender
-        case .pink: return Palette.pink
+        case .orange: return Color(hex: 0x16383E)
+        case .lavender: return Color(hex: 0x2C353A)
+        case .pink: return Color(hex: 0x123027)
         case .yellow: return Palette.yellow
         case .cream: return Palette.cream
         }
@@ -860,7 +922,7 @@ private struct ListView: View {
 
     var body: some View {
         if entries.isEmpty {
-            Text("No dictations match.").font(.system(size: 13)).foregroundStyle(Palette.greyOnLight).padding(.top, 20)
+            Text("No dictations match.").font(.inter(13)).foregroundStyle(Palette.greyOnLight).padding(.top, 20)
         } else {
             ScrollView {
                 VStack(spacing: 2) {
@@ -879,21 +941,21 @@ private struct ListRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             Text(entry.date.formatted(.dateTime.day().month(.abbreviated).hour().minute()))
-                .font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.greyOnLight)
+                .font(.inter(11, .medium)).foregroundStyle(Palette.greyOnLight)
                 .frame(width: 110, alignment: .leading)
-            Text(entry.text).font(.system(size: 13)).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
-            Text("\(entry.words) words").font(.system(size: 11)).foregroundStyle(Palette.greyOnLight)
+            Text(entry.text).font(.inter(13)).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+            Text("\(entry.words) words").font(.inter(11)).foregroundStyle(Palette.greyOnLight)
             Button {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(entry.text, forType: .string)
                 copied = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
-            } label: { Image(systemName: copied ? "checkmark" : "doc.on.doc").font(.system(size: 12)) }
+            } label: { Image(systemName: copied ? "checkmark" : "doc.on.doc").font(.inter(12)) }
                 .buttonStyle(.plain)
                 .opacity(hovering || copied ? 1 : 0)
         }
         .padding(.horizontal, 12).padding(.vertical, 9)
-        .background(hovering ? Color(hex: 0xF2F2F0) : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(hovering ? Palette.panelRaised : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .onHover { hovering = $0 }
     }
 }
@@ -912,20 +974,20 @@ private struct WeeklyCard: View {
         DarkCard(theme: theme) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text("Weekly Words Overview").font(.system(size: 14, weight: .semibold))
+                    Text("Weekly Words Overview").font(.inter(14, .semibold))
                     Spacer()
-                    Image(systemName: "chart.bar").font(.system(size: 12))
+                    Image(systemName: "chart.bar").font(.inter(12))
                         .frame(width: 30, height: 30)
                         .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.white.opacity(0.2)))
                 }
                 (Text("Last 7 days ").foregroundColor(Palette.greyOnDark) + Text("\(days.map(\.words).reduce(0, +).formatted()) words"))
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.inter(11, .medium))
                 GeometryReader { geo in
                     let height = geo.size.height - 22
                     HStack(alignment: .bottom, spacing: 12) {
                         VStack(alignment: .leading) {
                             ForEach([1.0, 0.66, 0.33], id: \.self) { fraction in
-                                Text("\(Int(Double(most) * fraction))").font(.system(size: 9)).foregroundStyle(Palette.greyOnDark)
+                                Text("\(Int(Double(most) * fraction))").font(.inter(9)).foregroundStyle(Palette.greyOnDark)
                                 Spacer()
                             }
                         }
@@ -991,7 +1053,7 @@ private struct Tooltip: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text("Today").font(.system(size: 9)).foregroundStyle(Palette.greyOnDark)
+            Text("Today").font(.inter(9)).foregroundStyle(Palette.greyOnDark)
             legend(Palette.yellow, "Words", words)
             legend(Palette.orange, "Dictations", dictations)
         }
@@ -1002,9 +1064,9 @@ private struct Tooltip: View {
     private func legend(_ color: Color, _ title: String, _ value: Int) -> some View {
         HStack(spacing: 6) {
             RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 8, height: 8)
-            Text(title).font(.system(size: 10))
+            Text(title).font(.inter(10))
             Spacer(minLength: 12)
-            Text(value.formatted()).font(.system(size: 10, weight: .bold))
+            Text(value.formatted()).font(.inter(10, .bold))
         }
     }
 }
@@ -1018,7 +1080,7 @@ private struct NumbersCard: View {
         DarkCard(theme: theme) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Your Numbers").font(.system(size: 14, weight: .semibold))
+                    Text("Your Numbers").font(.inter(14, .semibold))
                     Spacer()
                     Image(systemName: "ellipsis")
                 }
@@ -1034,12 +1096,12 @@ private struct NumbersCard: View {
     private func row(_ icon: String, _ color: Color, _ title: String, _ value: String, _ unit: String,
                      highlighted: Bool = false) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: icon).font(.system(size: 11, weight: .bold)).foregroundStyle(Palette.ink)
+            Image(systemName: icon).font(.inter(11, .bold)).foregroundStyle(Palette.ink)
                 .frame(width: 24, height: 24).background(color, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            Text(title).font(.system(size: 13))
+            Text(title).font(.inter(13))
             Spacer()
-            Text(value).font(.system(size: 14, weight: .bold))
-            if !unit.isEmpty { Text(unit).font(.system(size: 11)).foregroundStyle(Palette.greyOnDark) }
+            Text(value).font(.inter(14, .bold))
+            if !unit.isEmpty { Text(unit).font(.inter(11)).foregroundStyle(Palette.greyOnDark) }
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
         .background(highlighted ? theme.selected : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -1071,14 +1133,14 @@ private struct ProfileButton: View {
                 HStack(spacing: 10) {
                     avatar.frame(width: 40, height: 40).clipShape(Circle())
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(account.user?.name ?? "Signed in").font(.system(size: 14, weight: .bold))
+                        Text(account.user?.name ?? "Signed in").font(.inter(14, .bold))
                         if let email = account.user?.email {
-                            Text(email).font(.system(size: 12)).foregroundStyle(.secondary)
+                            Text(email).font(.inter(12)).foregroundStyle(.secondary)
                         }
                     }
                 }
-                Text("Logging out pauses voice typing and removes your key from this Mac. It comes back when you log in again.")
-                    .font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 240, alignment: .leading)
+                Text("Logging out stops syncing. Your API key stays on this Mac, so voice typing keeps working.")
+                    .font(.inter(11)).foregroundStyle(.secondary).frame(width: 240, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
                 Button(role: .destructive) {
                     showing = false
@@ -1098,14 +1160,35 @@ private struct ProfileButton: View {
         } else if account.isSignedIn {
             initials
         } else {
-            Image(systemName: "person.fill").font(.system(size: 13, weight: .bold)).foregroundStyle(Palette.white.opacity(0.85))
+            Image(systemName: "person.fill").font(.inter(13, .bold)).foregroundStyle(Palette.white.opacity(0.85))
                 .frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.white.opacity(0.12))
         }
     }
 
     private var initials: some View {
         Text(String((account.user?.name ?? account.user?.email ?? "?").prefix(1)).uppercased())
-            .font(.system(size: 13, weight: .heavy)).foregroundStyle(Palette.ink)
+            .font(.inter(13, .heavy)).foregroundStyle(Palette.ink)
             .frame(maxWidth: .infinity, maxHeight: .infinity).background(Palette.cream)
+    }
+}
+
+/// Registers the bundled Inter font (SIL Open Font License) so SwiftUI can use it by name.
+enum InterFont {
+    static func register() {
+        guard let url = Bundle.main.url(forResource: "Inter", withExtension: "ttf") else { return }
+        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+    }
+}
+
+
+/// Asks macOS for Accessibility permission, but only once each time MicFlow starts. Several features
+/// need it; without this each of them would show its own prompt, over and over, until it is granted.
+enum AccessibilityPrompt {
+    private static var asked = false
+
+    static func askOnce() {
+        guard !asked, !AXIsProcessTrusted() else { return }
+        asked = true
+        AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
     }
 }

@@ -15,6 +15,8 @@ final class VoiceOverlay {
 
     /// The microphone's loudness right now (RMS), for the waveform and the glow.
     var level: () -> Float = { 0 }
+    /// The name of the voice key, shown on the key in the pill.
+    var keyName: () -> String = { "" }
 
     private let state = VoiceOverlayState()
     private var panel: NSPanel?
@@ -25,6 +27,7 @@ final class VoiceOverlay {
     private static let size = CGSize(width: 560, height: 300)
 
     func show(_ content: Content) {
+        state.keyName = keyName()
         switch content {
         case .listening(let text):
             if state.phase != .listening { state.levels = Array(repeating: 0, count: VoiceOverlayState.barCount) }
@@ -38,9 +41,11 @@ final class VoiceOverlay {
         }
         let panel = self.panel ?? makePanel()
         self.panel = panel
-        if let screen = NSScreen.main {
+        do {
+            let screen = NSScreen.underPointer
             // The pill's bottom edge sits where the old pill's did.
-            panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - Self.size.width / 2, y: screen.visibleFrame.minY + 40))
+            // Right at the bottom edge of the screen, below the Dock line, so it stays off the app's own controls.
+            panel.setFrameOrigin(NSPoint(x: screen.visibleFrame.midX - Self.size.width / 2, y: screen.frame.minY + 6))
         }
         panel.orderFrontRegardless()
         startMeter()
@@ -89,6 +94,7 @@ final class VoiceOverlay {
         panel.hasShadow = false
         panel.ignoresMouseEvents = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.hidesOnDeactivate = false
         panel.contentView = NSHostingView(rootView: VoiceOverlayView(state: state))
         return panel
     }
@@ -102,6 +108,7 @@ final class VoiceOverlayState: ObservableObject {
 
     @Published var phase = Phase.hidden
     @Published var text = ""
+    @Published var keyName = ""
     /// Recent loudness, oldest first, one per waveform bar.
     @Published var levels = Array(repeating: Float(0), count: barCount)
     /// The loudness, eased slowly, for the glow.
@@ -133,8 +140,8 @@ private struct TextBox: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 14, weight: .medium))
-            .foregroundStyle(isError ? Color(red: 1, green: 0.55, blue: 0.5) : .white)
+            .font(.inter(14, .medium))
+            .foregroundStyle(isError ? Color(hex: 0xFF8904) : Color(hex: 0xF2F0ED))
             .lineSpacing(2)
             .lineLimit(5)
             .truncationMode(.head)
@@ -143,61 +150,48 @@ private struct TextBox: View {
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.black.opacity(0.85)))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.white.opacity(0.12)))
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(hex: 0x0A1012)))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.white.opacity(0.16)))
+            .shadow(color: .black.opacity(0.5), radius: 18, y: 10)
     }
 }
 
-/// A fixed-size dark pill whose edge glows with a gradient that flows around it, brighter as the
-/// voice gets louder, with a waveform inside.
+/// The pill from the website: a dark capsule with the voice key (it presses down while you talk), teal bars
+/// that move with your voice, and a short label. A teal glow rings it while it listens.
 private struct GlowingPill: View {
     @ObservedObject var state: VoiceOverlayState
 
-    private static let size = CGSize(width: 176, height: 40)
-    /// The plasma's colors: hot pink, lavender, periwinkle blue, a near-white glint, joined back to
-    /// the start for a seamless loop.
-    private static let pink = Color(red: 1.0, green: 0.45, blue: 0.82)
-    private static let lavender = Color(red: 0.80, green: 0.66, blue: 1.0)
-    private static let blue = Color(red: 0.45, green: 0.56, blue: 1.0)
-    private static let glint = Color(red: 0.96, green: 0.90, blue: 1.0)
-    private static let rim: [Color] = [pink, lavender, blue, glint, blue, lavender, pink]
+    private static let teal = Color(hex: 0x19D0E8)
+    private static let tealSoft = Color(hex: 0xC5F8FF)
 
     var body: some View {
-        TimelineView(.animation) { timeline in
-            let seconds = timeline.date.timeIntervalSinceReferenceDate
-            let level = Double(state.smoothed)
-            // The rim's colors drift once around every 40 seconds.
-            let rim = AngularGradient(colors: Self.rim, center: .center,
-                                      angle: .degrees((seconds * 9).truncatingRemainder(dividingBy: 360)))
-            // A faint breath every 8 seconds, and a little more light while speaking.
-            let glow = 0.88 + 0.05 * sin(seconds * 2 * .pi / 8) + 0.12 * level
-            ZStack {
-                // Bloom around the rim, like light through haze.
-                Capsule().stroke(rim, lineWidth: 6).blur(radius: 16).opacity(0.75 * glow)
-                Capsule().stroke(rim, lineWidth: 3).blur(radius: 5).opacity(0.9 * glow)
-                // The dark inside, faintly violet.
-                Capsule().fill(Color(red: 0.03, green: 0.02, blue: 0.06))
-                // Soft ribbons of light drifting slowly inside, behind the waveform.
-                ZStack {
-                    Ribbon(seconds: seconds, speed: 0.22, amplitude: 9, waves: 1.1, offset: 0)
-                        .stroke(Self.pink, lineWidth: 6).blur(radius: 4).opacity(0.7)
-                    Ribbon(seconds: seconds, speed: -0.16, amplitude: 11, waves: 0.8, offset: 2.1)
-                        .stroke(Self.blue, lineWidth: 7).blur(radius: 5).opacity(0.75)
-                    Ribbon(seconds: seconds, speed: 0.12, amplitude: 6, waves: 1.4, offset: 4.0)
-                        .stroke(Self.glint, lineWidth: 2).blur(radius: 2).opacity(0.4)
-                }
-                .opacity(0.75 + 0.25 * level)
-                .blendMode(.screen)
-                .clipShape(Capsule())
-                // Light glowing in from the rim.
-                Capsule().strokeBorder(rim, lineWidth: 5).blur(radius: 4).opacity(0.65 * glow)
-                // The rim itself: colored, with a white-hot line along its middle.
-                Capsule().strokeBorder(rim, lineWidth: 3)
-                Capsule().strokeBorder(Color.white.opacity(0.6), lineWidth: 1).padding(1)
-                content
-            }
-            .frame(width: Self.size.width, height: Self.size.height)
+        let live = state.phase == .listening
+        HStack(spacing: 14) {
+            keycap(pressed: live)
+            content
         }
+        .padding(.leading, 12).padding(.trailing, 20).padding(.vertical, 10)
+        .background(Capsule().fill(Color(hex: 0x0B1214)))
+        .overlay(Capsule().strokeBorder(live ? Self.teal.opacity(0.75) : Color.white.opacity(0.16), lineWidth: 1))
+        .shadow(color: live ? Self.teal.opacity(0.4 + Double(state.smoothed) * 0.3) : .clear, radius: live ? 22 : 0)
+        .shadow(color: .black.opacity(0.6), radius: 14, y: 8)
+        .animation(.easeOut(duration: 0.2), value: live)
+    }
+
+    /// The voice key, pressed down while you hold (or after you tap) it.
+    private func keycap(pressed: Bool) -> some View {
+        Text(state.keyName)
+            .font(.inter(12, .semibold))
+            .foregroundStyle(pressed ? Self.tealSoft : Color(hex: 0xF2F0ED))
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(LinearGradient(colors: [Color(hex: 0x3A4346), Color(hex: 0x242B2D)], startPoint: .top, endPoint: .bottom))
+                    .shadow(color: Color(hex: 0x0C1011), radius: 0, y: pressed ? 1 : 4)
+                    .shadow(color: .black.opacity(0.5), radius: pressed ? 2 : 6, y: pressed ? 2 : 6)
+            )
+            .offset(y: pressed ? 3 : 0)
+            .animation(.easeOut(duration: 0.12), value: pressed)
     }
 
     @ViewBuilder private var content: some View {
@@ -205,54 +199,37 @@ private struct GlowingPill: View {
         case .transcribing:
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small).colorScheme(.dark)
-                Text("Typing…").font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
+                Text("Typing…").font(.inter(13, .medium)).foregroundStyle(Color(hex: 0xF2F0ED))
             }
         case .failed:
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color(hex: 0xFF8904))
+                Text("Couldn't type").font(.inter(13, .medium)).foregroundStyle(Color(hex: 0xF2F0ED))
+            }
         case .listening, .hidden:
-            Waveform(levels: state.levels)
-        }
-    }
-}
-
-/// A slow wave across the pill, for the ribbons of light inside it.
-private struct Ribbon: Shape {
-    let seconds: Double
-    /// Drift in radians per second; negative drifts the other way.
-    let speed: Double
-    let amplitude: CGFloat
-    /// How many waves fit across the pill.
-    let waves: Double
-    let offset: Double
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let phase = seconds * speed + offset
-        // The ribbon also rises and falls a little, on its own slower rhythm.
-        let lift = CGFloat(sin(seconds * abs(speed) * 0.6 + offset)) * rect.height * 0.12
-        for step in 0...40 {
-            let x = rect.minX + rect.width * CGFloat(step) / 40
-            let angle = Double(step) / 40 * waves * 2 * .pi + phase
-            let point = CGPoint(x: x, y: rect.midY + lift + CGFloat(sin(angle)) * amplitude)
-            step == 0 ? path.move(to: point) : path.addLine(to: point)
-        }
-        return path
-    }
-}
-
-/// Bars for the last second of sound, newest on the right, mirrored around the middle line.
-private struct Waveform: View {
-    let levels: [Float]
-
-    var body: some View {
-        HStack(spacing: 2.5) {
-            ForEach(levels.indices, id: \.self) { index in
-                Capsule()
-                    .fill(Color.white.opacity(0.55 + Double(levels[index]) * 0.45))
-                    .frame(width: 2.5, height: 3 + CGFloat(levels[index]) * 20)
+            HStack(spacing: 12) {
+                Bars(levels: Array(state.levels.suffix(9)), color: Self.teal)
+                Text(state.phase == .listening ? "Listening…" : "Hold to talk")
+                    .font(.inter(13, .medium)).foregroundStyle(Color(hex: 0xF2F0ED))
             }
         }
-        .frame(height: 24)
+    }
+}
+
+/// Teal bars for the last moments of sound, newest on the right.
+private struct Bars: View {
+    let levels: [Float]
+    let color: Color
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 3) {
+            ForEach(levels.indices, id: \.self) { index in
+                Capsule()
+                    .fill(color.opacity(0.55 + Double(levels[index]) * 0.45))
+                    .frame(width: 3, height: 5 + CGFloat(levels[index]) * 20)
+            }
+        }
+        .frame(height: 26)
         .animation(.linear(duration: 1.0 / 30), value: levels)
     }
 }
