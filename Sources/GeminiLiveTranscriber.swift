@@ -204,7 +204,9 @@ final class GeminiLiveTranscriber: LiveTranscriber {
             fail(LiveTranscriptionFailure(message: ProviderName.hide(error["message"] as? String ?? "Model 1 returned an error.")))
         }
         guard let content = json["serverContent"] as? [String: Any] else { return }
-        if let final = (content["inputTranscription"] as? [String: Any])?["text"] as? String, !final.isEmpty {
+        if let rawFinal = (content["inputTranscription"] as? [String: Any])?["text"] as? String, !rawFinal.isEmpty {
+            // No full stop at every pause, and no invisible or broken characters: punctuation comes from the clean-up.
+            let final = TextGuard.sanitize(TextGuard.stripStops(rawFinal)).isEmpty ? rawFinal : TextGuard.sanitize(TextGuard.stripStops(rawFinal))
             // The server can repeat a finished segment, or resend it with more words on the end: each part
             // is written down once.
             let norm = { (t: String) in t.lowercased().filter { $0.isLetter || $0.isNumber } }
@@ -226,7 +228,7 @@ final class GeminiLiveTranscriber: LiveTranscriber {
             onText(text)
         }
         if let guess = (content["interimInputTranscription"] as? [String: Any])?["text"] as? String {
-            interim = guess
+            interim = TextGuard.sanitize(TextGuard.stripStops(guess))
             checkInterim()
             onText(text)
         }

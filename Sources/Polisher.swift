@@ -26,7 +26,7 @@ enum Polisher {
     static func polish(_ text: String, mixUps: [MixUp], yourInstructions: String, screen: String = "", key: String, timeLimit: Double) async -> String? {
         let instructions = instructions(for: mixUps, yours: yourInstructions, screen: screen)
         // Each task says whether it's the timer, and the answer if it got one.
-        return await withTaskGroup(of: (timer: Bool, answer: String?).self) { group in
+        let answer: String? = await withTaskGroup(of: (timer: Bool, answer: String?).self) { group in
             group.addTask {
                 try? await Task.sleep(nanoseconds: UInt64(timeLimit * 1_000_000_000))
                 if !Task.isCancelled { voiceLog.info("Polishing took over \(timeLimit) s: the raw text stays") }
@@ -65,6 +65,12 @@ enum Polisher {
             group.cancelAll()
             return answer
         }
+        // The clean-up may not rewrite or shorten what was said: if it changed too much, the raw words stay.
+        guard let answer else { return nil }
+        let clean = TextGuard.sanitize(answer)
+        if TextGuard.acceptsPolish(raw: text, polished: clean) { return clean }
+        voiceLog.info("Clean-up changed too much (\(text.count) -> \(clean.count) characters): the raw words stay")
+        return nil
     }
 
     private static func request(_ text: String, instructions: String, model: String, key: String, timeout: Double = 5) async throws -> String? {
@@ -137,6 +143,9 @@ enum Polisher {
             The microphone is sometimes far from the speaker, so some parts are heard badly. After fixing, read \
             your whole result once more and repair any part that still makes no sense, using the topic.
             - Fix capital letters, spelling and obvious grammar mistakes, lightly.
+            - People pause for a long time while they think, especially when speaking Bengali. A pause is NOT the end of a \
+            sentence: never put a full stop at every pause. Read the whole text first, then put a full stop only where a \
+            thought really ends (normally once, at the very end).
             - Add punctuation sparingly: a full stop at the end of a sentence, a question mark for a question, \
             and a comma only where the sentence would be unclear without it. Do not add commas, dashes, \
             colons, semicolons, quotation marks or exclamation marks in between. Fewer is better.
@@ -145,6 +154,8 @@ enum Polisher {
             Strict limits:
             - Keep as much of what was said as possible. Never delete a clause, a detail, a name, a number or \
             an opinion. Only change single words or short phrases.
+            - The answer must be about as long as the text you were given: never shorten it, summarize it, or change its \
+            wording or meaning. Every sentence, detail and opinion stays.
             - Never rewrite, reorder, merge or split sentences, and never change what a sentence means. Make \
             the text only slightly cleaner, not different.
             - If you're not sure a word is wrong, leave it as it is.
