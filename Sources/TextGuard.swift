@@ -14,6 +14,7 @@ enum TextGuard {
             let v = s.value
             if v == 0xFFFC || v == 0xFFFD || v == 0x200B || v == 0xFEFF || v == 0x2060 || v == 0x200E || v == 0x200F { continue }
             if (0x202A...0x202E).contains(v) || (0x2066...0x2069).contains(v) || (0xE000...0xF8FF).contains(v) { continue }
+            if (v >= 0x0900 && v <= 0x0DFF && !(v >= 0x0980 && v <= 0x09FF) && v != 0x0964 && v != 0x0965) { continue } // a stray letter from another Indian script
             if (v < 0x20 && v != 0x0A && v != 0x09) || v == 0x7F { continue }
             if v == 0x200C || v == 0x200D {
                 let before = i > 0 && isBengali(scalars[i - 1].value)
