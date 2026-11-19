@@ -132,6 +132,24 @@ final class VoiceTypingModel: ObservableObject {
     @Published private(set) var statusIsError = false
     @Published private(set) var needsAccessibility = false
 
+    /// What MicFlow learns about the speaker, shown and editable in the Memory card.
+    let memory = MemoryStore()
+    /// Backup providers (Groq and others), shown once a Google key is saved.
+    let providerSettings = ProviderSettings()
+    /// A recording of the last dictation is saved, so it can be transcribed again.
+    @Published private(set) var canRecover = DictationAudio.exists
+    /// Set when the last text looked like noise: a reason to offer "Recover last dictation".
+    @Published var recoverOffer: String?
+    @Published private(set) var recovering = false
+    /// How the voice indicator looks: the pill, or a small waveform line you can drag.
+    @Published var overlayStyle: VoiceOverlay.Style {
+        didSet { defaults.set(overlayStyle.rawValue, forKey: "voiceOverlayStyle"); overlay.style = overlayStyle }
+    }
+    /// The microphones to pick from (uid, name), the chosen one's uid, and how to choose: set by the Sound tab's model.
+    var micChoices: () -> [(uid: String, name: String)] = { [] }
+    var selectedMicUID: () -> String = { "" }
+    var selectMic: (String) -> Void = { _ in }
+
     /// The device to record from (for Gemini Live), chosen by the Sound tab.
     var inputDevice: () -> AudioDevice? = { nil }
     /// How much louder to make the microphone while dictating (linear).
@@ -155,6 +173,8 @@ final class VoiceTypingModel: ObservableObject {
     /// Read from the Keychain once and kept: reading it on every dictation could show a password
     /// box, which blocks the app and makes macOS switch off its key listener.
     private var cachedKey: String?
+    /// The saved Google key, once read (for the Memory card's "Learn now").
+    var currentKey: String? { cachedKey }
     private var loadingKey = false
     private var live: LiveTranscriber?
     private var streamTimer: Timer?
@@ -194,8 +214,13 @@ final class VoiceTypingModel: ObservableObject {
         if !defaults.bool(forKey: "mixUpsRetired") { defaults.set(true, forKey: "mixUpsRetired"); fixMixUps = false; defaults.set(false, forKey: Keys.fixMixUps) }
         instructionsEnabled = defaults.object(forKey: Keys.instructionsEnabled) as? Bool ?? true
         screenContext = defaults.bool(forKey: Keys.screenContext)
+        overlayStyle = VoiceOverlay.Style(rawValue: defaults.string(forKey: "voiceOverlayStyle") ?? "") ?? .pill
         // Both engines use the key for the clean-up.
         loadKeyIfNeeded()
+        overlay.style = overlayStyle
+        overlay.micChoices = { [weak self] in self?.micChoices() ?? [] }
+        overlay.selectedMicUID = { [weak self] in self?.selectedMicUID() ?? "" }
+        overlay.selectMic = { [weak self] in self?.selectMic($0) }
         overlay.level = { [recorder] in recorder.level }
         overlay.keyName = { [weak self] in self?.hotkeyName ?? "" }
         applyEnabled()
@@ -664,13 +689,17 @@ final class VoiceTypingModel: ObservableObject {
         // Gemini Live: stop recording and hand over the audio not sent yet.
         var lastSamples: [Float] = []
         let live = self.live
-        if engine == .chrome { _ = recorder.stop() }
+        if engine == .chrome {
+            let all = recorder.stop()
+            saveAudio(all, rate: recorder.sampleRate)
+        }
         if engine == .geminiLive {
             streamTimer?.invalidate()
             streamTimer = nil
             let all = recorder.stop()
             lastSamples = all
             lastRate = recorder.sampleRate
+            saveAudio(all, rate: recorder.sampleRate)
             lastSamples = sentSamples < all.count ? Array(all[sentSamples...]) : []
             self.live = nil
         }
@@ -692,6 +721,7 @@ final class VoiceTypingModel: ObservableObject {
                     if text.isEmpty { text = await live.settle() } else { settled = false }
                 }
                 let raw = MyWords.spell(text, myWords)
+                if TextGuard.looksGarbled(text) { offerRecovery("The last dictation came out as unreadable characters.") }
                 overlay.hide()
                 setStatus(readyText)
                 phase = .idle
@@ -712,7 +742,7 @@ final class VoiceTypingModel: ObservableObject {
                     guard willPolish, !Task.isCancelled, let cachedKey,
                           let polished = await Polisher.polish(full, mixUps: fixMixUps ? mixUps : [],
                                                                yourInstructions: instructionsEnabled ? yourInstructions : "",
-                                                               screen: screenText,
+                                                               screen: screenText, memory: memory.summary,
                                                                key: cachedKey, timeLimit: 0.8) else { return full }
                     return MyWords.spell(polished, myWords)
                 }
@@ -726,11 +756,13 @@ final class VoiceTypingModel: ObservableObject {
                 pasteStatus.done(statusID)
                 guard !cancelled else {
                     log.add(pasted.text, seconds: heldFor)
+                    afterDictation(pasted.text)
                     dictionary.learn(from: pasted.text, samples: lastSamples, sampleRate: lastRate)
                     return
                 }
                 guard final != pasted.text else {
                     log.add(final, seconds: heldFor)
+                    afterDictation(final)
                     dictionary.learn(from: final, samples: lastSamples, sampleRate: lastRate)
                     return
                 }
@@ -742,6 +774,7 @@ final class VoiceTypingModel: ObservableObject {
                     NSPasteboard.general.setString(final, forType: .string)
                 }
                 log.add(final, seconds: heldFor)
+                afterDictation(final)
                 return
             } catch {
                 overlay.show(.failed(error.localizedDescription))
@@ -753,6 +786,71 @@ final class VoiceTypingModel: ObservableObject {
             }
             phase = .idle
         }
+    }
+
+    // MARK: Recover and memory
+
+    private func saveAudio(_ samples: [Float], rate: Double) {
+        Task.detached(priority: .utility) { [weak self] in
+            DictationAudio.save(samples, rate: rate)
+            await MainActor.run { self?.canRecover = DictationAudio.exists }
+        }
+    }
+
+    private func afterDictation(_ text: String) {
+        DictationAudio.setText(text)
+        memory.noteDictation(text, key: cachedKey)
+    }
+
+    private func offerRecovery(_ reason: String) {
+        recoverOffer = reason
+        MicFlowNotifier.shared.notifyRecover(reason)
+    }
+
+    func dismissRecoverOffer() { recoverOffer = nil }
+
+    /// Transcribes the saved sound of the last dictation again, in one piece, and types the result (or, if MicFlow is in front, copies it).
+    func recoverLast() {
+        guard !recovering, phase == .idle, let wav = DictationAudio.load() else {
+            setStatus("There is no saved dictation to recover.", error: true)
+            return
+        }
+        loadKeyIfNeeded()
+        guard let key = cachedKey else { setStatus("Add your Google key first (Voice page).", error: true); return }
+        recovering = true
+        recoverOffer = nil
+        phase = .transcribing
+        overlay.show(.transcribing)
+        Task {
+            let heard = await BatchTranscriber.transcribe(wav: wav, googleKey: key)
+            recovering = false
+            phase = .idle
+            guard let heard else {
+                overlay.show(.failed("Couldn't transcribe the saved sound. Check your internet connection and try again."))
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                overlay.hide()
+                return
+            }
+            let text = MyWords.spell(TextGuard.stripStops(TextGuard.sanitize(heard)), myWords)
+            overlay.hide()
+            guard !text.isEmpty else { return }
+            if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == Bundle.main.bundleIdentifier {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                setStatus("Recovered. It is on your clipboard: paste it where you want it.")
+            } else {
+                dictations += 1
+                _ = PastedText.paste(text, activity: activity, dictation: dictations)
+                setStatus("Recovered and typed.")
+            }
+            log.add(text, seconds: DictationAudio.meta?.seconds ?? 0)
+            DictationAudio.setText(text)
+        }
+    }
+
+    func deleteSavedSound() {
+        DictationAudio.delete()
+        canRecover = false
     }
 
     private func cancelRecording() {

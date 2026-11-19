@@ -23,7 +23,7 @@ struct KeychainSecret {
         return dir.appendingPathComponent(service)
     }
 
-    private static let key: SymmetricKey = {
+    static let key: SymmetricKey = {
         var id = "unknown-mac"
         let entry = IORegistryEntryFromPath(kIOMainPortDefault, "IOService:/")
         if let value = IORegistryEntryCreateCFProperty(entry, "IOPlatformUUID" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? String { id = value }

@@ -46,6 +46,12 @@ final class BoostModel: ObservableObject {
     /// BlackHole 2ch: boosted mic audio goes in here, and other apps record from it.
     /// The two sound helpers, downloaded on demand (see SoundHelperInstaller).
     let soundHelpers = SoundHelperInstaller()
+    /// MicFlow's own screens call the two helpers by MicFlow's names; other apps still see the helpers' real names.
+    static func displayName(_ device: AudioDevice) -> String {
+        if device.name.contains("BlackHole 2ch") { return "MicFlow Microphone" }
+        if device.name.contains("BlackHole 16ch") { return "MicFlow Speaker" }
+        return device.name
+    }
     var helpersMissing: Bool { micVirtual == nil || speakerVirtual == nil }
     @Published private(set) var micVirtual: AudioDevice?
     /// BlackHole 16ch: the Mac's default output while speaker boost is on; its sound is boosted from here.
@@ -60,8 +66,14 @@ final class BoostModel: ObservableObject {
     @Published private(set) var speakerStatusIsError = false
     @Published private(set) var speakerRunning = false
 
+    /// The first time a boost is switched on without the helpers, they download by themselves (with the progress bar on the Sound page).
+    private func fetchHelpersIfNeeded() {
+        guard helpersMissing, soundHelpers.stage == .idle else { return }
+        soundHelpers.start()
+    }
+
     @Published var enabled: Bool {
-        didSet { defaults.set(enabled, forKey: Keys.enabled); applyState() }
+        didSet { defaults.set(enabled, forKey: Keys.enabled); if enabled && !oldValue { fetchHelpersIfNeeded() }; applyState() }
     }
     @Published var selectedMicUID: String {
         didSet {
@@ -80,7 +92,7 @@ final class BoostModel: ObservableObject {
         }
     }
     @Published var speakerEnabled: Bool {
-        didSet { defaults.set(speakerEnabled, forKey: Keys.speakerEnabled); applySpeakerState() }
+        didSet { defaults.set(speakerEnabled, forKey: Keys.speakerEnabled); if speakerEnabled && !oldValue { fetchHelpersIfNeeded() }; applySpeakerState() }
     }
     @Published var selectedSpeakerUID: String {
         didSet {
@@ -341,6 +353,7 @@ final class BoostModel: ObservableObject {
         guard let preferences = try? JSONEncoder().encode(voiceTyping.savedPreferences()) else { return nil }
         var fingerprint = preferences
         fingerprint += Data(SettingsSync.canonical(SettingsSync.snapshot()).utf8)
+        fingerprint += Data("memory\(voiceTyping.memory.revision)providers\(voiceTyping.providerSettings.revision)".utf8)
         let key = voiceTyping.keyUpload
         if case .set(let value) = key { fingerprint += Data(SHA256.hash(data: Data(value.utf8))) }
         if case .clear = key { fingerprint += Data("clear".utf8) }
@@ -349,33 +362,92 @@ final class BoostModel: ObservableObject {
 
     func syncPreferences() {
         guard account.isSignedIn, !restoringFromAccount else { return }
+        // Nothing changed here since the last save: nothing to do.
+        if let lastSavedPreferences, localFingerprint() == lastSavedPreferences { return }
         Task {
             do {
+                // Every save first reads the account's copy and merges it, so a change made on another device (or a delete) is
+                // never overwritten by this Mac's older copy.
+                let remote = try await PreferenceSync.load(account)
+                mergeCrossDevice(remote?.settings)
                 let preferences = voiceTyping.savedPreferences()
-                let settings = SettingsSync.snapshot()
+                var settings = SettingsSync.snapshot()
+                if let user = account.user?.id {
+                    if let sealed = CrossSync.sealedMemory(voiceTyping.memory.syncEntries(), user: user) { settings[CrossSync.memoryKey] = sealed }
+                    let state = voiceTyping.providerSettings.syncState(googleKey: voiceTyping.currentKey)
+                    if !state.isEmpty, let sealed = CrossSync.sealedProviders(state, user: user) { settings[CrossSync.providersKey] = sealed }
+                }
                 let key = voiceTyping.keyUpload
-                guard let fingerprint = localFingerprint(), fingerprint != lastSavedPreferences else { return }
+                guard let fingerprint = localFingerprint() else { return }
                 try await PreferenceSync.save(preferences, key: key, settings: settings, account: account)
                 lastSavedPreferences = fingerprint
+                syncStatus = "Synced \(Date().formatted(date: .omitted, time: .shortened))"
             } catch {
                 voiceLog.info("Saving preferences failed: \(error.localizedDescription, privacy: .public)")
+                syncStatus = "Sync failed. Will try again."
             }
         }
     }
 
+    /// Shown next to the Sync button.
+    @Published var syncStatus = ""
+
+    /// "Sync now": brings the account's copy in and saves this Mac's.
+    func syncNow() {
+        guard account.isSignedIn else { syncStatus = "Sign in with Google to sync."; return }
+        syncStatus = "Syncing…"
+        lastSavedPreferences = nil
+        pullPreferences(force: true)
+    }
+
     /// Settings changed on another of your devices: brought in every minute and when MicFlow comes to
     /// the front. Anything you changed here that isn't saved yet is saved first, never overwritten.
-    func pullPreferences() {
-        guard account.isSignedIn, !restoringFromAccount, voiceTyping.phase == .idle else { return }
-        if let lastSavedPreferences, localFingerprint() != lastSavedPreferences { syncPreferences(); return }
+    func pullPreferences(force: Bool = false) {
+        guard account.isSignedIn, !restoringFromAccount, voiceTyping.phase == .idle || force else { return }
+        if !force, let lastSavedPreferences, localFingerprint() != lastSavedPreferences { syncPreferences(); return }
         Task {
             restoringFromAccount = true
-            defer { restoringFromAccount = false }
-            guard let saved = try? await PreferenceSync.load(account) else { return }
+            guard let saved = try? await PreferenceSync.load(account) else {
+                restoringFromAccount = false
+                if force { syncStatus = "Sync failed. Will try again." }
+                return
+            }
             voiceTyping.apply(saved.preferences, apiKey: saved.apiKey)
+            let needsUpload = mergeCrossDevice(saved.settings)
             if let settings = saved.settings, SettingsSync.apply(settings) { settingsRestartNeeded = true }
-            lastSavedPreferences = localFingerprint()
+            lastSavedPreferences = needsUpload || force ? nil : localFingerprint()
+            restoringFromAccount = false
+            if needsUpload || force { syncPreferences() }
         }
+    }
+
+    /// Merges the account's memory and backup-provider keys into this Mac's. Returns whether this Mac holds something the account
+    /// doesn't (so it must be saved back).
+    @discardableResult
+    private func mergeCrossDevice(_ settings: [String: Any]?) -> Bool {
+        guard let user = account.user?.id else { return false }
+        var needsUpload = false
+        let memory = voiceTyping.memory
+        if let remote = CrossSync.remoteMemory(settings, user: user) {
+            let result = memory.merge(remote: remote)
+            needsUpload = needsUpload || Self.differs(result.merged, remote)
+        } else {
+            // The account has no memory yet (or none this Mac can open): this Mac's goes up.
+            needsUpload = needsUpload || !memory.syncEntries().isEmpty
+        }
+        memory.pulledFromAccount = true
+        let providers = voiceTyping.providerSettings
+        if let remote = CrossSync.remoteProviders(settings, user: user) {
+            let result = providers.merge(remote: remote, googleKey: voiceTyping.currentKey)
+            needsUpload = needsUpload || result.merged != remote
+        } else {
+            needsUpload = needsUpload || !providers.syncState(googleKey: voiceTyping.currentKey).isEmpty
+        }
+        return needsUpload
+    }
+
+    private static func differs(_ a: [SyncEntry], _ b: [SyncEntry]) -> Bool {
+        Dictionary(a.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }) != Dictionary(b.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
     /// True once settings from another device were written here and a restart will use them.
@@ -389,9 +461,11 @@ final class BoostModel: ObservableObject {
             var settingsChanged = false
             if let saved = try? await PreferenceSync.load(account) {
                 voiceTyping.apply(saved.preferences, apiKey: saved.apiKey)
+                mergeCrossDevice(saved.settings)
                 if let settings = saved.settings { settingsChanged = SettingsSync.apply(settings) }
             }
             restoringFromAccount = false
+            lastSavedPreferences = nil
             syncPreferences()
             if settingsChanged { restartToApplySettings() }
         }
@@ -518,6 +592,8 @@ final class BoostModel: ObservableObject {
         }
         // Any change to your preferences or settings is saved to your account a few seconds later.
         prefsWatch = voiceTyping.objectWillChange.map { _ in () }
+            .merge(with: voiceTyping.memory.objectWillChange.map { _ in () })
+            .merge(with: voiceTyping.providerSettings.objectWillChange.map { _ in () })
             .merge(with: NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification).map { _ in () })
             .debounce(for: .seconds(4), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in self?.syncPreferences() }
@@ -527,6 +603,8 @@ final class BoostModel: ObservableObject {
         NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.pullPreferences() }
         }
+        // Brings in what your other devices saved as soon as MicFlow starts.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.pullPreferences() }
         evaluateLock()
         // New posts, update notes and pop-ups reach the app within half an hour.
         contentTimer = Timer.scheduledTimer(withTimeInterval: 30 * 60, repeats: true) { [weak self] _ in
@@ -558,6 +636,9 @@ final class BoostModel: ObservableObject {
         // Voice typing records the Sound tab's microphone itself and makes it louder by the Boost
         // amount, whether or not the boost for all apps is on, so meetings keep the normal mic.
         voiceTyping.inputDevice = { [weak self] in self?.selectedMic }
+        voiceTyping.micChoices = { [weak self] in (self?.micDevices ?? []).map { ($0.uid, Self.displayName($0)) } }
+        voiceTyping.selectedMicUID = { [weak self] in self?.selectedMic?.uid ?? "" }
+        voiceTyping.selectMic = { [weak self] in self?.selectedMicUID = $0 }
         voiceTyping.inputGain = { [weak self] in Self.linear(self?.gainDB ?? 0) }
 
         swipes.leftAction = swipeLeftAction

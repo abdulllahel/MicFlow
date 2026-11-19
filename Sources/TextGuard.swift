@@ -58,4 +58,31 @@ enum TextGuard {
         }
         return true
     }
+
+    /// The share (0 to 1) of the characters that don't belong in English or Bengali text: letters of other scripts (Indian scripts
+    /// other than Bengali, Cyrillic, Greek...), accented Latin letters, symbols, replacement boxes. Plain English and Bengali give
+    /// about 0; text that came out as byte-shaped noise gives far more.
+    static func garbleShare(_ text: String) -> Double {
+        var total = 0, odd = 0
+        for s in text.unicodeScalars {
+            let v = s.value
+            if CharacterSet.whitespacesAndNewlines.contains(s) { continue }
+            total += 1
+            if v < 0x80 || isBengali(v) || v == 0x0964 || v == 0x0965 { continue }
+            // Typographic punctuation people really dictate.
+            if (0x2010...0x2027).contains(v) || (0x20A0...0x20CF).contains(v) || v == 0x00A3 || v == 0x00A9 || v == 0x00AE || v == 0x00B0 { continue }
+            odd += 1
+        }
+        guard total > 0 else { return 0 }
+        // Noise made of ASCII symbols (a Bengali letter cut to one byte looks like that) counts too.
+        let symbols = text.unicodeScalars.filter { "@#$%^&*~`|\\<>{}[]_=+".unicodeScalars.contains($0) }.count
+        return Double(odd + symbols) / Double(total)
+    }
+
+    /// True when a dictation looks like noise rather than words: worth offering to transcribe again from the saved sound.
+    static func looksGarbled(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.unicodeScalars.count >= 6 else { return false }
+        return garbleShare(trimmed) >= 0.2
+    }
 }

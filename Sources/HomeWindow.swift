@@ -221,7 +221,7 @@ private struct HomeView: View {
                 case .sound: SoundPage(model: model, theme: theme)
                 case .voice:
                     if voice.needsKeySetup { KeyOnboarding(voice: voice, account: model.account, theme: theme) }
-                    else { VoicePage(voice: voice, theme: theme, openDictionary: { page = .dictionary }, account: model.account) }
+                    else { VoicePage(voice: voice, theme: theme, openDictionary: { page = .dictionary }, account: model.account, syncNow: { model.syncNow() }, syncStatus: model.syncStatus) }
                 case .mouse: MousePage(model: model, theme: theme)
                 case .keyboard: KeyboardPage(model: model, theme: theme)
                 case .figma: FigmaPage(model: model, theme: theme)

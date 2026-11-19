@@ -6,6 +6,8 @@ import SwiftUI
 struct MicFlowApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
+    init() { ProviderChain.selfTestIfAsked() }
+
     var body: some Scene {
         MenuBarExtra {
             BoostView(model: delegate.model)
@@ -42,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             UserDefaults.standard.set("What's New", forKey: "settingsTab")
             HomeWindow.show(model: model)
         }
+        MicFlowNotifier.shared.recover = { [model] in model.voiceTyping.recoverLast() }
         HomeWindow.show(model: model)
         InstallLocation.cleanUpAfterUpdate()
         InstallLocation.offerMoveIfNeeded()

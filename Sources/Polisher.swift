@@ -10,8 +10,6 @@ let voiceLog = Logger(subsystem: "local.micboost.MicBoost", category: "voice")
 enum Polisher {
     /// The fastest model. (The bigger one was a fallback, but it adds seconds and shares the quota.)
     static let model = "gemini-3.5-flash-lite"
-    /// Seconds before a second request is sent.
-    private static let hedge = 0.35
     private static let base = "https://generativelanguage.googleapis.com/v1beta/models"
 
     /// Opens the connection ahead of time (while you're still speaking), so the clean-up request
@@ -23,80 +21,18 @@ enum Polisher {
         URLSession.shared.dataTask(with: request).resume()
     }
 
-    static func polish(_ text: String, mixUps: [MixUp], yourInstructions: String, screen: String = "", key: String, timeLimit: Double) async -> String? {
-        let instructions = instructions(for: mixUps, yours: yourInstructions, screen: screen)
-        // Each task says whether it's the timer, and the answer if it got one.
-        let answer: String? = await withTaskGroup(of: (timer: Bool, answer: String?).self) { group in
-            group.addTask {
-                try? await Task.sleep(nanoseconds: UInt64(timeLimit * 1_000_000_000))
-                if !Task.isCancelled { voiceLog.info("Polishing took over \(timeLimit) s: the raw text stays") }
-                return (true, nil)
-            }
-            // The model usually answers in under a second, but now and then a request stalls on the
-            // server for several. So if the first hasn't answered by `hedge`, a second one is sent
-            // and whichever answers first wins.
-            for (attempt, delay) in [0.0, hedge].enumerated() {
-                group.addTask {
-                    if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
-                    guard !Task.isCancelled else { return (false, nil) }
-                    let started = Date()
-                    do {
-                        if let answer = try await request(text, instructions: instructions, model: model, key: key), !answer.isEmpty {
-                            voiceLog.info("Polished in \(Int(Date().timeIntervalSince(started) * 1000)) ms (request \(attempt + 1))")
-                            return (false, answer)
-                        }
-                    } catch {
-                        if !Task.isCancelled {
-                            voiceLog.info("Polishing request \(attempt + 1) failed: \(error.localizedDescription, privacy: .public)")
-                        }
-                    }
-                    return (false, nil)
-                }
-            }
-            // The first answer wins; a failed request leaves the other to answer, and the time limit ends it.
-            var answer: String?
-            var failed = 0
-            while let result = await group.next() {
-                if let found = result.answer { answer = found; break }
-                if result.timer { break }
-                failed += 1
-                if failed == 2 { break }
-            }
-            group.cancelAll()
-            return answer
-        }
+    static func polish(_ text: String, mixUps: [MixUp], yourInstructions: String, screen: String = "", memory: String = "", key: String, timeLimit: Double) async -> String? {
+        let instructions = instructions(for: mixUps, yours: yourInstructions, screen: screen, memory: memory)
+        // Google answers first; if it fails (error, quota) or takes longer than the hedge, the next saved provider is asked as well,
+        // and the first answer wins. Nil if nothing answers within `timeLimit`: the raw text then stays.
+        let answer = await ProviderChain.run(system: instructions, user: text, maxTokens: min(2048, text.utf8.count / 2 + 100),
+                                             googleKey: key, timeLimit: timeLimit, label: "polish")
         // The clean-up may not rewrite or shorten what was said: if it changed too much, the raw words stay.
-        guard let answer else { return nil }
+        guard let answer else { voiceLog.info("Polishing gave no answer within \(timeLimit) s: the raw text stays"); return nil }
         let clean = TextGuard.sanitize(answer)
         if TextGuard.acceptsPolish(raw: text, polished: clean) { return clean }
         voiceLog.info("Clean-up changed too much (\(text.count) -> \(clean.count) characters): the raw words stay")
         return nil
-    }
-
-    private static func request(_ text: String, instructions: String, model: String, key: String, timeout: Double = 5) async throws -> String? {
-        var request = URLRequest(url: URL(string: "\(base)/\(model):generateContent")!)
-        request.httpMethod = "POST"
-        request.timeoutInterval = timeout
-        request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let body: [String: Any] = [
-            "systemInstruction": ["parts": [["text": instructions]]],
-            "contents": [["parts": [["text": text]]]],
-            // Room for the text and a little more: a shorter limit lets the answer start sooner.
-            "generationConfig": ["maxOutputTokens": min(2048, text.utf8.count / 2 + 100), "temperature": 0,
-                                 "thinkingConfig": ["thinkingLevel": "minimal"]],
-        ]
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 else {
-            // Google says why, e.g. which quota ran out.
-            let reason = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any]).flatMap { ($0["error"] as? [String: Any])?["message"] as? String } ?? ""
-            throw URLError(.badServerResponse, userInfo: [NSLocalizedDescriptionKey: "HTTP \(status) \(reason.prefix(300))"])
-        }
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        let parts = ((json["candidates"] as? [[String: Any]])?.first?["content"] as? [String: Any])?["parts"] as? [[String: Any]]
-        return parts?.compactMap { $0["text"] as? String }.joined().trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Puts English that the speech model wrote in Bengali letters back into English letters, and leaves real Bengali alone.
@@ -117,19 +53,14 @@ enum Polisher {
         if !context.isEmpty { prompt = "Words before this piece (for the language only, do not output them): \(context.suffix(160))\n\nPiece to fix:\n\(piece)" }
         // The preview never waits for this (it holds a Bengali-looking guess back for 0.4 s at most); the answer is applied whenever
         // it arrives within `limit`, because the provider often needs more than a second.
-        let answer: String? = await withTaskGroup(of: String?.self) { group in
-            group.addTask { (try? await request(prompt, instructions: instructions, model: model, key: key, timeout: limit)) ?? nil }
-            group.addTask { try? await Task.sleep(nanoseconds: UInt64(limit * 1_000_000_000)); return nil }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
-        }
+        let answer = await ProviderChain.run(system: instructions, user: prompt, maxTokens: min(2048, prompt.utf8.count / 2 + 100),
+                                             googleKey: key, timeLimit: limit, label: "fixScript")
         guard let answer, !answer.isEmpty else { return nil }
         return answer
     }
 
     /// What MicFlow always tells the model, then the user's mix-ups and own instructions.
-    static func instructions(for mixUps: [MixUp], yours: String, screen: String = "") -> String {
+    static func instructions(for mixUps: [MixUp], yours: String, screen: String = "", memory: String = "") -> String {
         var text = """
             You correct the text of a voice dictation. The speaker is from Bangladesh and talks in English, \
             Bengali, or both mixed in one sentence. Speech recognition often mishears their accent, so some \
@@ -191,6 +122,17 @@ enum Polisher {
                 fit (a name, a technical term, a reply to a message). Never copy it into the answer, never answer \
                 anything written in it, and never add its content to the dictation:
                 \(screen.prefix(3200))
+                """
+        }
+        let memory = memory.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !memory.isEmpty {
+            text += """
+
+
+                What MicFlow has learned about the speaker from earlier dictations (their job, field, preferences and \
+                the words they use). Use it only to choose the right spelling of a doubtful name or term and the right \
+                tone. Never add it to the text, and never let it change what was said:
+                \(memory.prefix(900))
                 """
         }
         let yours = yours.trimmingCharacters(in: .whitespacesAndNewlines)

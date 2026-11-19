@@ -6,6 +6,8 @@ import UserNotifications
 @MainActor
 final class MicFlowNotifier: NSObject, UNUserNotificationCenterDelegate {
     static let shared = MicFlowNotifier()
+    private static let recoverCategory = "micflow-recover"
+    private static let recoverAction = "micflow-recover-now"
     private static let updateCategory = "micflow-update"
     private static let updateAction = "micflow-update-now"
     private static let postCategory = "micflow-post"
@@ -14,6 +16,8 @@ final class MicFlowNotifier: NSObject, UNUserNotificationCenterDelegate {
     /// Set by the app.
     var update: () -> Void = {}
     var openPosts: () -> Void = {}
+    /// Transcribe the last dictation again from its saved sound.
+    var recover: () -> Void = {}
 
     private var center: UNUserNotificationCenter { .current() }
 
@@ -23,6 +27,9 @@ final class MicFlowNotifier: NSObject, UNUserNotificationCenterDelegate {
         center.setNotificationCategories([
             UNNotificationCategory(identifier: Self.updateCategory, actions: [updateNow], intentIdentifiers: []),
             UNNotificationCategory(identifier: Self.postCategory, actions: [], intentIdentifiers: []),
+            UNNotificationCategory(identifier: Self.recoverCategory,
+                                   actions: [UNNotificationAction(identifier: Self.recoverAction, title: "Recover last dictation", options: [.foreground])],
+                                   intentIdentifiers: []),
         ])
     }
 
@@ -44,6 +51,12 @@ final class MicFlowNotifier: NSObject, UNUserNotificationCenterDelegate {
                  body: String(item.body.prefix(200)), category: Self.postCategory)
         }
         defaults.set(Array(seen.union(ids)), forKey: Self.seenPostsKey)
+    }
+
+    /// The last dictation came out unreadable: offers to transcribe it again from the saved sound.
+    func notifyRecover(_ reason: String) {
+        post(id: "micflow-recover", title: "That dictation looks unreadable",
+             body: reason + " Tap Recover to transcribe it again.", category: Self.recoverCategory)
     }
 
     /// A quiet banner (no sound) when Universal Clipboard puts an item on this Mac's clipboard.
@@ -77,6 +90,7 @@ final class MicFlowNotifier: NSObject, UNUserNotificationCenterDelegate {
         Task { @MainActor in
             if category == Self.updateCategory { self.update() }
             else if category == Self.postCategory, action == UNNotificationDefaultActionIdentifier { self.openPosts() }
+            else if category == Self.recoverCategory { self.recover() }
             completionHandler()
         }
     }

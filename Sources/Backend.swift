@@ -365,7 +365,7 @@ enum PreferenceSync {
                 URLQueryItem(name: "id", value: "eq.\(user.id)"), URLQueryItem(name: "select", value: "settings"),
             ], token: token),
                let saved = ((try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]])?.first?["settings"] as? [String: Any] {
-                for (key, value) in saved where !SettingsSync.keys.contains(key) { merged[key] = value }
+                for (key, value) in saved where !SettingsSync.keys.contains(key) && merged[key] == nil { merged[key] = value }
             }
             row["settings"] = merged
         }

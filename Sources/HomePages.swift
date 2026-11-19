@@ -450,7 +450,7 @@ struct SoundPage: View {
                 FeatureCard(theme: theme, systemImage: "mic.fill", title: "Microphone", subtitle: "Boost it in all apps too",
                             isOn: $model.enabled) {
                     PillMenu(selection: Binding(get: { model.selectedMic?.uid ?? "" }, set: { model.selectedMicUID = $0 }),
-                             options: model.micDevices.map { ($0.uid, $0.name) })
+                             options: model.micDevices.map { ($0.uid, BoostModel.displayName($0)) })
                     CreamSlider(title: "Boost", value: $model.gainDB, range: 0...BoostModel.maxGainDB, step: 0.2,
                                 valueText: String(format: "+%.1f dB · %.1f×", model.gainDB, Double(BoostModel.linear(model.gainDB))))
                     if model.gainDB > 30 {
@@ -459,13 +459,13 @@ struct SoundPage: View {
                     CreamMeter(engine: model.micEngine, active: model.isRunning)
                     Note(text: model.status, isError: model.statusIsError)
                     CheckRow(title: "Set microphone hardware level to 100%", isOn: $model.maxHardwareVolume)
-                    Note(text: "Voice typing always uses this microphone at this boost. Turn the switch on only if you also want it louder in other apps: they then pick BlackHole 2ch as the microphone. Leave it off for meetings to sound normal.")
+                    Note(text: "Voice typing always uses this microphone at this boost. Turn the switch on only if you also want it louder in other apps: they then pick the MicFlow Microphone (listed as BlackHole 2ch in other apps). Leave it off for meetings to sound normal.")
                 }
             } right: {
                 FeatureCard(theme: theme, systemImage: "speaker.wave.2.fill", title: "Speakers", subtitle: "Make your Mac's sound louder",
                             isOn: $model.speakerEnabled) {
                     PillMenu(selection: Binding(get: { model.selectedSpeaker?.uid ?? "" }, set: { model.selectedSpeakerUID = $0 }),
-                             options: model.speakerDevices.map { ($0.uid, $0.name) })
+                             options: model.speakerDevices.map { ($0.uid, BoostModel.displayName($0)) })
                     CreamSlider(title: "Boost", value: $model.speakerGainDB, range: 0...BoostModel.maxGainDB, step: 0.2,
                                 valueText: String(format: "+%.1f dB · %.1f×", model.speakerGainDB, Double(BoostModel.linear(model.speakerGainDB))))
                     if model.speakerGainDB > 30 {
@@ -485,7 +485,7 @@ struct SoundPage: View {
     }
 
     private var detail: String {
-        if model.isRunning, let output = model.micVirtual { return "In Zoom, Discord, Meet and others, choose \(output.name) as the microphone." }
+        if model.isRunning, let output = model.micVirtual { return "In Zoom, Discord, Meet and others, choose \(output.name) as the microphone (MicFlow calls it \"MicFlow Microphone\")." }
         if !model.enabled { return "Other apps get your normal microphone." }
         return model.status
     }
@@ -499,6 +499,9 @@ struct VoicePage: View {
     let openDictionary: () -> Void
     /// For "Set it up for me": signs in with Google and makes the key.
     var account: Account? = nil
+    /// "Sync now" for memory and backup keys, and what it last did.
+    var syncNow: (() -> Void)? = nil
+    var syncStatus = ""
     @State private var keyDraft = ""
 
     var body: some View {
@@ -548,6 +551,8 @@ struct VoicePage: View {
                     PillButton(title: voice.instructionsEnabled && !voice.yourInstructions.isEmpty ? "Your instructions: on" : "Add your instructions",
                                systemImage: "arrow.up.right", style: .cream, action: openDictionary)
                 }
+                MicPickerCard(voice: voice, theme: theme)
+                RecoverCard(voice: voice, theme: theme)
             } right: {
                 if voice.engine == .geminiLive || voice.polish {
                     FeatureCard(theme: theme, systemImage: "key.fill", title: "API key", subtitle: "Kept in your Mac's Keychain") {
@@ -569,6 +574,8 @@ struct VoicePage: View {
                         Note(text: "On the free plan, the provider of this model may use what you say to improve their products, and people may review it, so don't dictate anything sensitive.")
                     }
                 }
+                if voice.hasKey { ProvidersCard(settings: voice.providerSettings, theme: theme, signedIn: account?.isSignedIn ?? false, syncStatus: syncStatus, syncNow: syncNow) }
+                MemoryCard(memory: voice.memory, theme: theme, key: { voice.currentKey }, signedIn: account?.isSignedIn ?? false, syncStatus: syncStatus, syncNow: syncNow)
                 FeatureCard(theme: theme, systemImage: "slider.horizontal.3", title: "Preferences",
                             subtitle: "\(voice.myWords.count) words · \(voice.mixUps.count) mix-ups") {
                     if !voice.myWords.isEmpty {
