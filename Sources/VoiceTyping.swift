@@ -46,6 +46,7 @@ final class VoiceTypingModel: ObservableObject {
         static let yourInstructions = "voiceTypingYourInstructions"
         static let instructionsEnabled = "voiceTypingInstructionsEnabled"
         static let screenContext = "voiceTypingScreenContext"
+        static let floatingPill = "floatingPillEnabled"
     }
 
     /// Presses shorter than this are ignored, so tapping a voice key (e.g. Ctrl in a shortcut) does nothing.
@@ -141,10 +142,18 @@ final class VoiceTypingModel: ObservableObject {
     /// Set when the last text looked like noise: a reason to offer "Recover last dictation".
     @Published var recoverOffer: String?
     @Published private(set) var recovering = false
-    /// How the voice indicator looks: the pill, or a small waveform line you can drag.
-    @Published var overlayStyle: VoiceOverlay.Style {
-        didSet { defaults.set(overlayStyle.rawValue, forKey: "voiceOverlayStyle"); overlay.style = overlayStyle }
+    /// The small always-visible pill at rest (on by default). It is the only dictation indicator: with this off it still appears
+    /// while you dictate.
+    @Published var floatingPillEnabled: Bool {
+        didSet { defaults.set(floatingPillEnabled, forKey: Keys.floatingPill); applyPill() }
     }
+    /// A recording that couldn't be typed is saved and waiting for Retry.
+    @Published private(set) var pendingRetry = RetryStore.exists
+    /// The connection dropped while you were talking (the voice is still being saved here).
+    private var connectionLost = false
+    /// Started with the pill's button, not a key: the pill shows a Stop button.
+    private var startedByPill = false
+    private var streamTicks = 0
     /// The microphones to pick from (uid, name), the chosen one's uid, and how to choose: set by the Sound tab's model.
     var micChoices: () -> [(uid: String, name: String)] = { [] }
     var selectedMicUID: () -> String = { "" }
@@ -214,15 +223,17 @@ final class VoiceTypingModel: ObservableObject {
         if !defaults.bool(forKey: "mixUpsRetired") { defaults.set(true, forKey: "mixUpsRetired"); fixMixUps = false; defaults.set(false, forKey: Keys.fixMixUps) }
         instructionsEnabled = defaults.object(forKey: Keys.instructionsEnabled) as? Bool ?? true
         screenContext = defaults.bool(forKey: Keys.screenContext)
-        overlayStyle = VoiceOverlay.Style(rawValue: defaults.string(forKey: "voiceOverlayStyle") ?? "") ?? .pill
+        floatingPillEnabled = defaults.object(forKey: Keys.floatingPill) as? Bool ?? true
         // Both engines use the key for the clean-up.
         loadKeyIfNeeded()
-        overlay.style = overlayStyle
-        overlay.micChoices = { [weak self] in self?.micChoices() ?? [] }
-        overlay.selectedMicUID = { [weak self] in self?.selectedMicUID() ?? "" }
-        overlay.selectMic = { [weak self] in self?.selectMic($0) }
         overlay.level = { [recorder] in recorder.level }
         overlay.keyName = { [weak self] in self?.hotkeyName ?? "" }
+        overlay.floatingActions = FloatingPillActions(start: { [weak self] in self?.startFromPill() },
+                                                      stop: { [weak self] in self?.stopFromPill() },
+                                                      retry: { [weak self] in self?.retryPending() },
+                                                      dismiss: { [weak self] in self?.dismissPending() })
+        dictionary.onPronunciationsChanged = { [weak self] in self?.syncPronunciations($0) }
+        dictionary.importPronunciations(from: mixUps)
         applyEnabled()
         dictionary.adopt(myWords)
         dictionary.addToWordList = { [weak self] in self?.addWord($0) }
@@ -312,10 +323,12 @@ final class VoiceTypingModel: ObservableObject {
         if !saved.instructions.isEmpty { yourInstructions = saved.instructions }
         instructionsEnabled = saved.instructions_enabled
         for word in saved.my_words { addWord(word) }
-        for mixUp in saved.mix_ups where !mixUps.contains(where: { $0.heard == mixUp.heard && $0.meant == mixUp.meant }) {
+        for mixUp in saved.mix_ups where !mixUps.contains(where: { $0.heard == mixUp.heard && $0.meant == mixUp.meant })
+            && !(mixUp.meaning == "pronunciation" && dictionary.wasDeleted(heard: mixUp.heard, meant: mixUp.meant)) {
             mixUps.append(mixUp)
         }
         saveMixUps()
+        dictionary.importPronunciations(from: saved.mix_ups)
         // The account's key is used when this Mac has none (or Google refused the one here); a
         // working key on this Mac stays, and is what gets saved to the account.
         if let key = apiKey, !key.isEmpty, key != cachedKey, !hasKey || keyFreePlanOff {
@@ -501,7 +514,16 @@ final class VoiceTypingModel: ObservableObject {
         }
     }
 
+    /// The pill exists while voice typing is on; the setting decides whether it also stays on screen at rest.
+    private func applyPill() {
+        overlay.configure(enabled: enabled, showAtRest: floatingPillEnabled)
+        overlay.setPending(pendingRetry)
+    }
+
+    func resetPillPosition() { overlay.resetFloatingPosition() }
+
     private func applyEnabled() {
+        applyPill()
         permissionTimer?.invalidate()
         permissionTimer = nil
         applyEngine()
@@ -638,6 +660,9 @@ final class VoiceTypingModel: ObservableObject {
                     await MainActor.run { self?.screenText = text }
                 }
             }
+            connectionLost = false
+            overlay.setConnectionLost(false)
+            streamTicks = 0
             let live = GeminiLiveTranscriber(key: cachedKey, inputRate: recorder.sampleRate)
             live.onText = { [weak self] text in
                 guard let self, self.showLivePreview else { return }
@@ -656,6 +681,7 @@ final class VoiceTypingModel: ObservableObject {
         pressedAt = Date()
         pressedKey = key
         phase = .listening
+        overlay.setStopVisible(tapToTalk || startedByPill)
         overlay.show(.listening(""))
     }
 
@@ -664,6 +690,14 @@ final class VoiceTypingModel: ObservableObject {
         let new = recorder.samples(from: sentSamples)
         sentSamples += new.count
         live.append(new, sampleRate: recorder.sampleRate)
+        // The connection dropped: keep recording; the sound stays on this Mac and is sent again afterwards.
+        if !connectionLost, !live.isUsable {
+            connectionLost = true
+            overlay.setConnectionLost(true)
+        }
+        // Every 5 seconds the recording so far is written to disk, so it survives a crash or a lost connection.
+        streamTicks += 1
+        if streamTicks % 50 == 0 { saveAudio(recorder.samples(from: 0), rate: recorder.sampleRate) }
     }
 
     private func keyUp(_ key: VoiceKey) {
@@ -681,6 +715,11 @@ final class VoiceTypingModel: ObservableObject {
         let heldFor = Date().timeIntervalSince(pressedAt)
         self.pressedAt = nil
         pressedKey = nil
+        startedByPill = false
+        overlay.setStopVisible(false)
+        let connectionLostAtStop = connectionLost
+        connectionLost = false
+        overlay.setConnectionLost(false)
         phase = .transcribing
         overlay.show(.transcribing)
         showingError = false
@@ -688,15 +727,22 @@ final class VoiceTypingModel: ObservableObject {
 
         // Gemini Live: stop recording and hand over the audio not sent yet.
         var lastSamples: [Float] = []
+        /// The whole recording, kept so a failed dictation can be sent again (Retry).
+        var fullSamples: [Float] = []
+        var fullRate = recorder.sampleRate
         let live = self.live
         if engine == .chrome {
             let all = recorder.stop()
+            fullSamples = all
+            fullRate = recorder.sampleRate
             saveAudio(all, rate: recorder.sampleRate)
         }
         if engine == .geminiLive {
             streamTimer?.invalidate()
             streamTimer = nil
             let all = recorder.stop()
+            fullSamples = all
+            fullRate = recorder.sampleRate
             lastSamples = all
             lastRate = recorder.sampleRate
             saveAudio(all, rate: recorder.sampleRate)
@@ -707,6 +753,10 @@ final class VoiceTypingModel: ObservableObject {
             do {
                 var text: String
                 var settled = true
+                if connectionLostAtStop {
+                    live?.cancel()
+                    throw GeminiClient.Failure(message: "The connection dropped while you were talking.")
+                }
                 if engine == .chrome {
                     guard let heard = await chrome.finishListening(), !heard.isEmpty else {
                         throw GeminiClient.Failure(message: "Model 2 didn't hear anything. Check the microphone setting in Chrome.")
@@ -720,7 +770,7 @@ final class VoiceTypingModel: ObservableObject {
                     live.onText = { _ in }
                     if text.isEmpty { text = await live.settle() } else { settled = false }
                 }
-                let raw = MyWords.spell(text, myWords)
+                let raw = spellMine(text)
                 if TextGuard.looksGarbled(text) { offerRecovery("The last dictation came out as unreadable characters.") }
                 overlay.hide()
                 setStatus(readyText)
@@ -736,15 +786,15 @@ final class VoiceTypingModel: ObservableObject {
                 let work = Task { () -> String in
                     var full = raw
                     if !settled, let live {
-                        let settledText = MyWords.spell(await live.settle(), myWords)
+                        let settledText = spellMine(await live.settle())
                         if !settledText.isEmpty { full = settledText }
                     }
                     guard willPolish, !Task.isCancelled, let cachedKey,
-                          let polished = await Polisher.polish(full, mixUps: fixMixUps ? mixUps : [],
+                          let polished = await Polisher.polish(full, mixUps: (fixMixUps ? mixUps.filter { $0.meaning != "pronunciation" } : []) + dictionary.pronunciationMixUps,
                                                                yourInstructions: instructionsEnabled ? yourInstructions : "",
                                                                screen: screenText, memory: memory.summary,
                                                                key: cachedKey, timeLimit: 0.8) else { return full }
-                    return MyWords.spell(polished, myWords)
+                    return spellMine(polished)
                 }
                 let statusID = pasteStatus.pasted(polishing: willPolish) {
                     cancelled = true
@@ -777,12 +827,11 @@ final class VoiceTypingModel: ObservableObject {
                 afterDictation(final)
                 return
             } catch {
-                overlay.show(.failed(error.localizedDescription))
                 noteProblem(error.localizedDescription)
                 showingError = true
                 setStatus("Couldn't transcribe: \(error.localizedDescription)", error: true)
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
-                overlay.hide()
+                // The sound is saved first; then it is sent again for a couple of seconds, and Retry shows if that fails too.
+                await recoverFromFailure(samples: fullSamples, rate: fullRate, seconds: heldFor, reason: error.localizedDescription)
             }
             phase = .idle
         }
@@ -822,7 +871,7 @@ final class VoiceTypingModel: ObservableObject {
         phase = .transcribing
         overlay.show(.transcribing)
         Task {
-            let heard = await BatchTranscriber.transcribe(wav: wav, googleKey: key)
+            let heard = await BatchTranscriber.transcribeOrdered(wav: wav, googleKey: key)
             recovering = false
             phase = .idle
             guard let heard else {
@@ -831,21 +880,122 @@ final class VoiceTypingModel: ObservableObject {
                 overlay.hide()
                 return
             }
-            let text = MyWords.spell(TextGuard.stripStops(TextGuard.sanitize(heard)), myWords)
             overlay.hide()
-            guard !text.isEmpty else { return }
-            if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == Bundle.main.bundleIdentifier {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(text, forType: .string)
-                setStatus("Recovered. It is on your clipboard: paste it where you want it.")
-            } else {
-                dictations += 1
-                _ = PastedText.paste(text, activity: activity, dictation: dictations)
-                setStatus("Recovered and typed.")
-            }
-            log.add(text, seconds: DictationAudio.meta?.seconds ?? 0)
-            DictationAudio.setText(text)
+            _ = deliverRecovered(heard, seconds: DictationAudio.meta?.seconds ?? 0)
         }
+    }
+
+    /// Types (or, if MicFlow is in front, copies) the text of a recording transcribed afterwards. False when there was no text.
+    @discardableResult
+    private func deliverRecovered(_ heard: String, seconds: Double) -> Bool {
+        let text = spellMine(TextGuard.stripStops(TextGuard.sanitize(heard)))
+        guard !text.isEmpty else { return false }
+        if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == Bundle.main.bundleIdentifier {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            setStatus("Recovered. It is on your clipboard: paste it where you want it.")
+        } else {
+            dictations += 1
+            _ = PastedText.paste(text, activity: activity, dictation: dictations)
+            setStatus("Recovered and typed.")
+        }
+        log.add(text, seconds: seconds)
+        DictationAudio.setText(text)
+        return true
+    }
+
+    // MARK: Offline retry
+
+    /// A dictation couldn't be typed (no connection, or the provider failed). Its sound is saved on this Mac; for a couple of seconds
+    /// it is sent again by itself, and if that fails too the pill shows Retry. Without enough sound there is nothing to retry, so
+    /// the problem is shown for a few seconds as before.
+    private func recoverFromFailure(samples: [Float], rate: Double, seconds: Double, reason: String) async {
+        guard RetryStore.save(samples, rate: rate, reason: reason), let wav = RetryStore.load() else {
+            overlay.show(.failed(reason))
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            overlay.hide()
+            return
+        }
+        pendingRetry = true
+        overlay.setPending(true)
+        loadKeyIfNeeded()
+        let key = cachedKey
+        overlay.show(.reconnecting("Connection problem. Trying again…"))
+        let result = await RetryPolicy.run { await BatchTranscriber.transcribeOrdered(wav: wav, googleKey: key) }
+        if let heard = result.value, finishRetry(heard, seconds: seconds) { return }
+        overlay.show(.retry("Couldn't reach the speech service. Your recording is saved on this Mac. Tap Retry when you're back online."))
+    }
+
+    /// Types a retried recording and clears it. False when it had no words.
+    private func finishRetry(_ heard: String, seconds: Double) -> Bool {
+        guard deliverRecovered(heard, seconds: seconds) else { return false }
+        RetryStore.delete()
+        pendingRetry = false
+        overlay.setPending(false)
+        overlay.hide()
+        return true
+    }
+
+    /// The pill's Retry button: sends the saved sound to the providers again (in the saved order).
+    func retryPending() {
+        guard phase == .idle, !recovering, let wav = RetryStore.load() else {
+            if !RetryStore.exists { dismissPending() }
+            return
+        }
+        loadKeyIfNeeded()
+        let key = cachedKey
+        let seconds = RetryStore.meta?.seconds ?? 0
+        recovering = true
+        phase = .transcribing
+        overlay.show(.reconnecting("Retrying…"))
+        Task {
+            let heard = await RetryPolicy.limited(60) { await BatchTranscriber.transcribeOrdered(wav: wav, googleKey: key) }
+            recovering = false
+            phase = .idle
+            if let heard, finishRetry(heard, seconds: seconds) { return }
+            overlay.show(.retry("Still can't reach the speech service. Your recording is saved on this Mac. Try again when you're online."))
+        }
+    }
+
+    /// Drops the saved sound (Dismiss).
+    func dismissPending() {
+        RetryStore.delete()
+        pendingRetry = false
+        overlay.setPending(false)
+        overlay.hide()
+    }
+
+    // MARK: Start from the pill
+
+    /// The pill's Start dictation button: the same as pressing the voice key, ended with the pill's Stop button.
+    func startFromPill() {
+        guard enabled, phase == .idle, !isLocked else { return }
+        startedByPill = true
+        keyDown(.bengali)
+        if phase != .listening { startedByPill = false }
+    }
+
+    func stopFromPill() {
+        guard phase == .listening, let key = pressedKey else { return }
+        finishListening(key)
+    }
+
+    // MARK: Pronunciations
+
+    /// Spells your words your way, and puts the written form wherever the transcript has a pronunciation from the dictionary.
+    private func spellMine(_ text: String) -> String {
+        MyWords.spell(MyWords.applyPronunciations(text, dictionary.pronunciations), myWords)
+    }
+
+    /// Pronunciations travel with your other preferences as mix-ups marked "pronunciation".
+    private func syncPronunciations(_ entries: [PersonalDictionary.Entry]) {
+        let mirrored: [MixUp] = entries.compactMap { entry in
+            guard let sounds = entry.sounds, !sounds.isEmpty else { return nil }
+            return MixUp(id: PersonalDictionary.stableID(heard: sounds, meant: entry.word), heard: sounds, meant: entry.word, meaning: "pronunciation")
+        }
+        mixUps.removeAll { $0.meaning == "pronunciation" }
+        mixUps.append(contentsOf: mirrored)
+        saveMixUps()
     }
 
     func deleteSavedSound() {
@@ -857,6 +1007,10 @@ final class VoiceTypingModel: ObservableObject {
         guard pressedAt != nil else { return }
         pressedAt = nil
         pressedKey = nil
+        startedByPill = false
+        connectionLost = false
+        overlay.setConnectionLost(false)
+        overlay.setStopVisible(false)
         chrome.cancelListening()
         streamTimer?.invalidate()
         streamTimer = nil

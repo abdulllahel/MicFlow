@@ -169,7 +169,9 @@ enum ProviderChain {
     /// Google first until the user reorders. Backups exist only once a Google key is saved.
     static func providers(googleKey: String?) -> [TextProvider] {
         guard let googleKey, !googleKey.isEmpty else { return [] }
-        var available: [String: TextProvider] = ["google": GoogleProvider(key: googleKey)]
+        var available: [String: TextProvider] = [:]
+        // Every provider has a switch, Google too: a switched-off provider is never asked.
+        if UserDefaults.standard.object(forKey: "provider-on-google") as? Bool ?? true { available["google"] = GoogleProvider(key: googleKey) }
         for backup in BackupProvider.all where UserDefaults.standard.object(forKey: "provider-on-\(backup.id)") as? Bool ?? true {
             if let key = ProviderKeys.shared.key(backup.id), !key.isEmpty { available[backup.id] = backup.make(key) }
         }
@@ -404,6 +406,10 @@ final class ProviderSettings: ObservableObject {
     /// Keys and switches set before sync existed (or changed outside the screen) become entries with today's time.
     private func reconcile() {
         var touched = false
+        if let on = UserDefaults.standard.object(forKey: "provider-on-google") as? Bool, state.enabled["google"]?.on != on {
+            state.enabled["google"] = .init(on: on, t: CrossSync.nowMs())
+            touched = true
+        }
         for backup in BackupProvider.all {
             if let key = ProviderKeys.shared.key(backup.id), !key.isEmpty, state.keys[backup.id]?.key != key || state.keys[backup.id]?.deleted == true {
                 state.keys[backup.id] = .init(key: key, t: CrossSync.nowMs(), deleted: false)
@@ -439,6 +445,9 @@ final class ProviderSettings: ObservableObject {
         let didChange = merged != state
         state = merged
         if let list = merged.order?.list { UserDefaults.standard.set(list, forKey: ProviderChain.orderKey) }
+        if let flag = merged.enabled["google"], UserDefaults.standard.object(forKey: "provider-on-google") as? Bool != flag.on {
+            UserDefaults.standard.set(flag.on, forKey: "provider-on-google")
+        }
         for backup in BackupProvider.all {
             if let entry = merged.keys[backup.id] {
                 if entry.deleted, ProviderKeys.shared.has(backup.id) { ProviderKeys.shared.remove(backup.id); saved.remove(backup.id) }

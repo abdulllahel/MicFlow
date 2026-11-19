@@ -779,7 +779,7 @@ private struct QuickAccessView: View {
                     if let thumbnail {
                         Image(nsImage: thumbnail).resizable().aspectRatio(contentMode: .fit)
                     } else {
-                        Image(systemName: "film").font(.largeTitle).frame(width: 220, height: 120)
+                        Image(systemName: "film").font(.inter(34)).frame(width: 220, height: 120)
                     }
                 }
                 .frame(maxWidth: 220, maxHeight: 150)
@@ -789,7 +789,7 @@ private struct QuickAccessView: View {
                 .onTapGesture { (actions.annotate ?? actions.showInFinder)() }
 
                 Button(action: close) {
-                    Image(systemName: "xmark.circle.fill").font(.title3).symbolRenderingMode(.palette)
+                    Image(systemName: "xmark.circle.fill").font(.inter(16)).symbolRenderingMode(.palette)
                         .foregroundStyle(.white, .black.opacity(0.6))
                 }
                 .buttonStyle(.plain)
@@ -988,7 +988,7 @@ private struct UploadCardView: View {
                 if let thumbnail {
                     Image(nsImage: thumbnail).resizable().aspectRatio(contentMode: .fill)
                 } else {
-                    Image(systemName: "doc").font(.title2).foregroundStyle(.secondary)
+                    Image(systemName: "doc").font(.inter(20)).foregroundStyle(.secondary)
                 }
             }
             .frame(width: 48, height: 48)
@@ -997,28 +997,28 @@ private struct UploadCardView: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 5) {
                     icon
-                    Text(title).font(.callout.weight(.semibold))
+                    Text(title).font(.inter(13, .semibold))
                     Spacer(minLength: 0)
-                    Button(action: close) { Image(systemName: "xmark").font(.caption) }
+                    Button(action: close) { Image(systemName: "xmark").font(.inter(11)) }
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
                         .help("Close")
                 }
                 switch phase {
                 case .uploading(let fraction):
-                    Text(name).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    Text(name).font(.inter(11)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                     if let fraction {
                         ProgressView(value: fraction)
                     } else {
                         ProgressView().progressViewStyle(.linear)
                     }
                 case .finished(let link):
-                    Text("Link copied to the clipboard.").font(.caption).foregroundStyle(.secondary)
+                    Text("Link copied to the clipboard.").font(.inter(11)).foregroundStyle(.secondary)
                     Button("Open in Browser") { NSWorkspace.shared.open(link) }
                         .buttonStyle(.link)
-                        .font(.caption)
+                        .font(.inter(11))
                 case .failed(let message):
-                    Text(message).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                    Text(message).font(.inter(11)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
                 }
             }
         }

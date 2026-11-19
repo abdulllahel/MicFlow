@@ -505,7 +505,7 @@ struct ClipboardCard: View {
                         if let qr = Self.qrImage("micflow://pair?c=\(code)") {
                             Image(nsImage: qr).interpolation(.none).resizable().frame(width: 96, height: 96)
                         }
-                        Text(code).font(.system(size: 30, weight: .heavy, design: .monospaced)).textSelection(.enabled)
+                        Text(code).font(.inter(30, .heavy).monospacedDigit()).textSelection(.enabled)
                     }
                 }
                 if !clipboard.pairingStatus.isEmpty { Note(text: clipboard.pairingStatus) }
@@ -525,6 +525,7 @@ struct ClipboardCard: View {
                 }
                 if wrongCode { Note(text: "That code wasn't found. It must be less than 10 minutes old, have 6 letters and numbers, and the other device must be logged in with the same Google account as this Mac.", isError: true) }
                 if !clipboard.status.isEmpty { Note(text: clipboard.status) }
+                ClipboardDevicesList(devices: clipboard.devices, signedIn: account.isSignedIn)
             }
         }
     }

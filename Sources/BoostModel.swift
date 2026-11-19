@@ -353,7 +353,7 @@ final class BoostModel: ObservableObject {
         guard let preferences = try? JSONEncoder().encode(voiceTyping.savedPreferences()) else { return nil }
         var fingerprint = preferences
         fingerprint += Data(SettingsSync.canonical(SettingsSync.snapshot()).utf8)
-        fingerprint += Data("memory\(voiceTyping.memory.revision)providers\(voiceTyping.providerSettings.revision)".utf8)
+        fingerprint += Data("memory\(voiceTyping.memory.revision)providers\(voiceTyping.providerSettings.revision)devices\(clipboard.devices.revision)".utf8)
         let key = voiceTyping.keyUpload
         if case .set(let value) = key { fingerprint += Data(SHA256.hash(data: Data(value.utf8))) }
         if case .clear = key { fingerprint += Data("clear".utf8) }
@@ -370,8 +370,10 @@ final class BoostModel: ObservableObject {
                 // never overwritten by this Mac's older copy.
                 let remote = try await PreferenceSync.load(account)
                 mergeCrossDevice(remote?.settings)
+                clipboard.devices.registerSelf()
                 let preferences = voiceTyping.savedPreferences()
                 var settings = SettingsSync.snapshot()
+                if !clipboard.devices.isEmpty { settings[DeviceSync.key] = clipboard.devices.syncObject() }
                 if let user = account.user?.id {
                     if let sealed = CrossSync.sealedMemory(voiceTyping.memory.syncEntries(), user: user) { settings[CrossSync.memoryKey] = sealed }
                     let state = voiceTyping.providerSettings.syncState(googleKey: voiceTyping.currentKey)
@@ -404,6 +406,8 @@ final class BoostModel: ObservableObject {
     /// the front. Anything you changed here that isn't saved yet is saved first, never overwritten.
     func pullPreferences(force: Bool = false) {
         guard account.isSignedIn, !restoringFromAccount, voiceTyping.phase == .idle || force else { return }
+        // "I'm still here": noticed by your other devices, which show who is connected now.
+        clipboard.devices.registerSelf()
         if !force, let lastSavedPreferences, localFingerprint() != lastSavedPreferences { syncPreferences(); return }
         Task {
             restoringFromAccount = true
@@ -427,6 +431,12 @@ final class BoostModel: ObservableObject {
     private func mergeCrossDevice(_ settings: [String: Any]?) -> Bool {
         guard let user = account.user?.id else { return false }
         var needsUpload = false
+        // The devices list is plain JSON: this Mac merges it in and adds itself.
+        if let remoteDevices = DeviceSync.decode(settings?[DeviceSync.key]) {
+            needsUpload = clipboard.devices.merge(remote: remoteDevices) || needsUpload
+        } else {
+            needsUpload = !clipboard.devices.isEmpty || needsUpload
+        }
         let memory = voiceTyping.memory
         if let remote = CrossSync.remoteMemory(settings, user: user) {
             let result = memory.merge(remote: remote)
@@ -459,6 +469,8 @@ final class BoostModel: ObservableObject {
         Task {
             restoringFromAccount = true
             var settingsChanged = false
+            // Signing in again brings a removed Mac back into the list.
+            clipboard.devices.reRegister()
             if let saved = try? await PreferenceSync.load(account) {
                 voiceTyping.apply(saved.preferences, apiKey: saved.apiKey)
                 mergeCrossDevice(saved.settings)
@@ -594,6 +606,7 @@ final class BoostModel: ObservableObject {
         prefsWatch = voiceTyping.objectWillChange.map { _ in () }
             .merge(with: voiceTyping.memory.objectWillChange.map { _ in () })
             .merge(with: voiceTyping.providerSettings.objectWillChange.map { _ in () })
+            .merge(with: clipboard.devices.objectWillChange.map { _ in () })
             .merge(with: NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification).map { _ in () })
             .debounce(for: .seconds(4), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in self?.syncPreferences() }

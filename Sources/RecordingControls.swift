@@ -121,7 +121,7 @@ private struct ControlsView: View {
                 Circle().fill(model.paused ? Color.orange : Color.red).frame(width: 9, height: 9)
                 TimelineView(.periodic(from: .now, by: 0.5)) { _ in
                     let s = Int(model.elapsed())
-                    Text(String(format: "%d:%02d", s / 60, s % 60)).font(.system(size: 14, weight: .semibold, design: .monospaced))
+                    Text(String(format: "%d:%02d", s / 60, s % 60)).font(.inter(14, .semibold).monospacedDigit())
                 }
             }
             .foregroundStyle(.white)

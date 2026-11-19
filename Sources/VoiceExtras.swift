@@ -39,7 +39,7 @@ final class MicMonitor: ObservableObject {
     deinit { timer?.invalidate() }
 }
 
-/// Which microphone voice typing uses, with a live level bar, and how the voice indicator looks.
+/// Which microphone voice typing uses, with a live level bar.
 struct MicPickerCard: View {
     @ObservedObject var voice: VoiceTypingModel
     let theme: HomeTheme
@@ -47,28 +47,12 @@ struct MicPickerCard: View {
     @State private var uid = ""
 
     var body: some View {
-        FeatureCard(theme: theme, systemImage: "mic.fill", title: "Microphone and indicator", subtitle: "What voice typing listens to") {
+        FeatureCard(theme: theme, systemImage: "mic.fill", title: "Microphone", subtitle: "What voice typing listens to") {
             PillMenu(selection: Binding(get: { uid }, set: { uid = $0; voice.selectMic($0); restart() }),
                      options: voice.micChoices().map { ($0.uid, $0.name) })
             LevelBar(level: monitor.level, active: !monitor.failed)
             Note(text: monitor.failed ? "MicFlow can't listen to this microphone. Pick another one, or allow the microphone in System Settings." : "Say something: the bar moves when this microphone hears you.",
                  isError: monitor.failed)
-            Text("Indicator").font(.inter(13))
-            HStack(spacing: 6) {
-                ForEach(VoiceOverlay.Style.allCases) { style in
-                    let selected = voice.overlayStyle == style
-                    Button { voice.overlayStyle = style } label: {
-                        Text(style.title).font(.inter(12, .semibold))
-                            .foregroundStyle(selected ? Palette.ink : Palette.white)
-                            .padding(.horizontal, 14).padding(.vertical, 8)
-                            .background(selected ? Palette.cream : Color.white.opacity(0.08), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            if voice.overlayStyle == .line {
-                Note(text: "A thin waveform with your words attached above it. Drag it anywhere on the screen; it stays there. The microphone button on it switches microphones.")
-            }
         }
         .onAppear { uid = voice.selectedMicUID(); restart() }
         .onDisappear { monitor.stop() }
@@ -212,13 +196,21 @@ struct ProvidersCard: View {
                     subtitle: "If Google is slow or runs out") {
             Note(text: "Google AI Studio answers first until you change the order below. If it fails, hits its limit, or is slow, MicFlow asks the next provider here, so dictation keeps working inside the same time limits. Add a key to switch one on.")
             SyncFooter(what: "Backup keys", signedIn: signedIn, status: syncStatus, syncNow: syncNow)
+            if settings.order.filter({ settings.isOn($0) && ($0 == "google" || settings.saved.contains($0)) }).isEmpty {
+                Note(text: "Every provider is switched off, so clean-up, recovery and backups cannot run. Switch at least one on.", isError: true)
+            }
             VStack(alignment: .leading, spacing: 6) {
                 Text("ORDER").font(.inter(11, .medium)).tracking(0.9).foregroundStyle(Palette.greyOnDark)
                 ForEach(Array(settings.order.enumerated()), id: \.element) { index, id in
                     HStack(spacing: 8) {
                         Text("\(index + 1)").font(.inter(12, .medium)).foregroundStyle(Palette.greyOnDark).frame(width: 16)
                         Text(id == "google" ? "Google AI Studio" : (BackupProvider.all.first { $0.id == id }?.name ?? id)).font(.inter(13))
+                        if id == "google" { Text("primary").font(.inter(11, .semibold)).foregroundStyle(Palette.greyOnDark) }
+                        else if !settings.saved.contains(id) { Text("no key yet").font(.inter(11)).foregroundStyle(Palette.greyOnDark) }
                         Spacer()
+                        // A switch for every provider, the primary one too.
+                        PinkSwitch(isOn: Binding(get: { settings.isOn(id) }, set: { settings.setOn(id, $0) }))
+                            .accessibilityLabel("\(id == "google" ? "Google AI Studio" : (BackupProvider.all.first { $0.id == id }?.name ?? id)) on or off")
                         Button { settings.move(id, by: -1) } label: { Image(systemName: "chevron.up") }
                             .buttonStyle(.plain).disabled(index == 0).opacity(index == 0 ? 0.3 : 1)
                         Button { settings.move(id, by: 1) } label: { Image(systemName: "chevron.down") }

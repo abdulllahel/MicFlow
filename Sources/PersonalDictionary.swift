@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import SwiftUI
 
 /// Words a normal dictionary doesn't know (brand names, jargon, local or made-up words), with a
@@ -9,15 +10,33 @@ import SwiftUI
 final class PersonalDictionary: ObservableObject {
     struct Entry: Codable, Identifiable, Equatable {
         var id = UUID()
+        /// How the word is written (what gets typed).
         var word: String
         /// The file name of the recording in the clips folder, if there is one.
         var clip: String?
+        /// How the word sounds, in your own letters ("amader"): when the transcript has this, MicFlow types `word` instead.
+        var sounds: String?
     }
 
     @Published private(set) var entries: [Entry] = []
     /// Set by the voice model: adds the word to the list used for spelling and clean-up.
     var addToWordList: (String) -> Void = { _ in }
     var removeFromWordList: (String) -> Void = { _ in }
+    /// Told whenever the pronunciation entries change, so they can travel with your other preferences.
+    var onPronunciationsChanged: ([Entry]) -> Void = { _ in }
+
+    /// The entries that have a pronunciation, as (what it sounds like, what to write).
+    var pronunciations: [(sounds: String, written: String)] {
+        entries.compactMap { entry in
+            guard let sounds = entry.sounds?.trimmingCharacters(in: .whitespacesAndNewlines), !sounds.isEmpty else { return nil }
+            return (sounds, entry.word)
+        }
+    }
+
+    /// The same entries as clean-up instructions ("heard" → "meant").
+    var pronunciationMixUps: [MixUp] {
+        pronunciations.map { MixUp(heard: $0.sounds, meant: $0.written, meaning: "pronunciation") }
+    }
 
     private let defaults = UserDefaults.standard
     private let key = "personalDictionaryEntries"
@@ -44,10 +63,12 @@ final class PersonalDictionary: ObservableObject {
         if changed { save() }
     }
 
-    func add(_ word: String, samples: [Float]? = nil, sampleRate: Double = 48_000, announce: Bool = false) {
+    func add(_ word: String, sounds: String? = nil, samples: [Float]? = nil, sampleRate: Double = 48_000, announce: Bool = false) {
         let word = word.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !word.isEmpty, !entries.contains(where: { $0.word.caseInsensitiveCompare(word) == .orderedSame }) else { return }
-        var entry = Entry(word: word)
+        let sounds = sounds?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        guard !word.isEmpty, !entries.contains(where: { $0.word.caseInsensitiveCompare(word) == .orderedSame && ($0.sounds ?? "").caseInsensitiveCompare(sounds ?? "") == .orderedSame }) else { return }
+        var entry = Entry(word: word, sounds: sounds)
+        markDeleted(entry, false)
         if let samples, !samples.isEmpty {
             let name = "\(entry.id.uuidString).wav"
             // At most the last eight seconds: enough to hear how the word is said.
@@ -57,14 +78,74 @@ final class PersonalDictionary: ObservableObject {
         entries.append(entry)
         save()
         addToWordList(word)
+        if sounds != nil { onPronunciationsChanged(entries) }
         if announce { chip.show("Added “\(word)” to your dictionary") }
     }
 
+    private let deletedKey = "personalDictionaryDeletedPronunciations"
+
+    /// A pronunciation you deleted here is not brought back by another device that still has it.
+    func wasDeleted(heard: String, meant: String) -> Bool {
+        (defaults.stringArray(forKey: deletedKey) ?? []).contains(Self.stableID(heard: heard, meant: meant).uuidString)
+    }
+
+    private func markDeleted(_ entry: Entry, _ deleted: Bool) {
+        guard let sounds = entry.sounds, !sounds.isEmpty else { return }
+        var ids = Set(defaults.stringArray(forKey: deletedKey) ?? [])
+        let id = Self.stableID(heard: sounds, meant: entry.word).uuidString
+        if deleted { ids.insert(id) } else { ids.remove(id) }
+        defaults.set(Array(ids), forKey: deletedKey)
+    }
+
     func remove(_ entry: Entry) {
+        markDeleted(entry, true)
         entries.removeAll { $0.id == entry.id }
         if let clip = entry.clip { try? FileManager.default.removeItem(at: folder.appendingPathComponent(clip)) }
-        removeFromWordList(entry.word)
+        // The word leaves the spelling list unless another entry still uses it.
+        if !entries.contains(where: { $0.word.caseInsensitiveCompare(entry.word) == .orderedSame }) { removeFromWordList(entry.word) }
         save()
+        if entry.sounds != nil { onPronunciationsChanged(entries) }
+    }
+
+    /// Changes how an entry sounds and how it is written.
+    func update(_ entry: Entry, word: String, sounds: String?) {
+        let word = word.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sounds = sounds?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        guard !word.isEmpty, let index = entries.firstIndex(where: { $0.id == entry.id }) else { return }
+        let old = entries[index]
+        markDeleted(old, true)
+        entries[index].word = word
+        entries[index].sounds = sounds
+        markDeleted(entries[index], false)
+        if old.word != word {
+            if !entries.contains(where: { $0.word.caseInsensitiveCompare(old.word) == .orderedSame }) { removeFromWordList(old.word) }
+            addToWordList(word)
+        }
+        save()
+        onPronunciationsChanged(entries)
+    }
+
+    /// Pronunciations other devices saved (they travel as mix-ups marked "pronunciation"); entries already here are kept as they are.
+    func importPronunciations(from mixUps: [MixUp]) {
+        var changed = false
+        for mixUp in mixUps where mixUp.meaning == "pronunciation" {
+            guard !wasDeleted(heard: mixUp.heard, meant: mixUp.meant),
+                  !entries.contains(where: { $0.word == mixUp.meant && ($0.sounds ?? "").caseInsensitiveCompare(mixUp.heard) == .orderedSame }) else { continue }
+            var entry = Entry(word: mixUp.meant, sounds: mixUp.heard)
+            entry.id = Self.stableID(heard: mixUp.heard, meant: mixUp.meant)
+            entries.append(entry)
+            addToWordList(mixUp.meant)
+            changed = true
+        }
+        if changed { save() }
+    }
+
+    /// The same id on every Mac for the same pronunciation, so a sync can't make copies.
+    nonisolated static func stableID(heard: String, meant: String) -> UUID {
+        var bytes = Array(CryptoKit.SHA256.hash(data: Data("\(heard.lowercased())|\(meant)".utf8)).prefix(16))
+        bytes[6] = (bytes[6] & 0x0F) | 0x50
+        bytes[8] = (bytes[8] & 0x3F) | 0x80
+        return UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
     }
 
     func play(_ entry: Entry) {
@@ -140,50 +221,110 @@ final class LearnedWordChip {
     }
 }
 
-/// The dictionary panel on the Preferences page.
+extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
+}
+
+extension MyWords {
+    /// Puts the written form wherever the transcript has a word as you say it ("amader" becomes "আমাদের"). Whole words only,
+    /// any case; spaces and hyphens inside a multi-word sound may vary. Longer sounds go first.
+    static func applyPronunciations(_ text: String, _ list: [(sounds: String, written: String)]) -> String {
+        list.sorted { $0.sounds.count > $1.sounds.count }.reduce(text) { text, item in
+            let parts = item.sounds.split(whereSeparator: { $0.isWhitespace || $0 == "-" }).map { NSRegularExpression.escapedPattern(for: String($0)) }
+            guard !parts.isEmpty, !item.written.isEmpty else { return text }
+            let pattern = "(?<![\\p{L}\\p{N}])" + parts.joined(separator: "[\\s\\-]+") + "(?![\\p{L}\\p{N}])"
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return text }
+            return regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text),
+                                                  withTemplate: NSRegularExpression.escapedTemplate(for: item.written))
+        }
+    }
+}
+
+/// The dictionary panel on the Preferences page: words you add by how they sound, each with how to write it. Edit or delete any.
 struct PersonalDictionaryPanel: View {
     @ObservedObject var dictionary: PersonalDictionary
     @State private var newWord = ""
+    @State private var newSounds = ""
+    @State private var editing: UUID?
+    @State private var editWord = ""
+    @State private var editSounds = ""
 
     var body: some View {
         WhitePanel {
             HStack(alignment: .firstTextBaseline) {
                 Text("Personal dictionary").font(.display(24))
-                Text("brands, jargon, local and made-up words").font(.inter(12)).foregroundStyle(Palette.greyOnLight)
+                Text("words as you say them").font(.inter(12)).foregroundStyle(Palette.greyOnLight)
                 Spacer()
             }
-            Text("MicFlow adds words it doesn't know as you talk (after you say one a second time) and keeps a recording of how you said it. Tap play to hear it.")
+            Text("Add a word by how it sounds when you say it, and how it should be written. Whenever MicFlow hears it, it types your spelling. MicFlow also adds words it doesn't know as you talk (after you say one a second time). You can edit or delete any of them.")
                 .font(.inter(12)).foregroundStyle(Palette.greyOnLight)
             if dictionary.entries.isEmpty {
                 Text("No words yet.").font(.inter(13)).foregroundStyle(Palette.greyOnLight)
             }
             ForEach(dictionary.entries) { entry in
-                HStack(spacing: 10) {
-                    Text(entry.word).font(.inter(14, .bold))
-                    Spacer()
-                    if entry.clip != nil {
-                        Button { dictionary.play(entry) } label: {
-                            Label("Play", systemImage: "play.circle.fill").font(.inter(12, .semibold))
-                        }
-                        .buttonStyle(.plain).foregroundStyle(Palette.pink).help("Hear how you said it")
-                    }
-                    Button { dictionary.remove(entry) } label: {
-                        Image(systemName: "minus.circle.fill").font(.inter(18)).foregroundStyle(Palette.orange)
-                    }
-                    .buttonStyle(.plain).help("Remove \(entry.word)")
-                }
-                .padding(.horizontal, 12).padding(.vertical, 8)
-                .background(Palette.panelRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                if editing == entry.id { editRow(entry) } else { row(entry) }
             }
-            HStack {
-                PillField(placeholder: "Add a word", text: $newWord, onDark: false, onSubmit: add)
-                PillButton(title: "Add word", systemImage: "plus", style: .yellow, action: add)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Add a word").font(.inter(13, .bold))
+                HStack {
+                    PillField(placeholder: "How it sounds (e.g. amader)", text: $newSounds, onDark: false, onSubmit: add)
+                    Image(systemName: "arrow.right").foregroundStyle(Palette.greyOnLight)
+                    PillField(placeholder: "Write it as (e.g. আমাদের)", text: $newWord, onDark: false, onSubmit: add)
+                    PillButton(title: "Add", systemImage: "plus", style: .yellow, action: add)
+                }
             }
         }
     }
 
+    private func row(_ entry: PersonalDictionary.Entry) -> some View {
+        HStack(spacing: 10) {
+            if let sounds = entry.sounds, !sounds.isEmpty {
+                Text(sounds).font(.inter(14, .semibold)).foregroundStyle(Palette.greyOnLight)
+                Image(systemName: "arrow.right").font(.inter(11, .bold)).foregroundStyle(Palette.pink)
+            }
+            Text(entry.word).font(.inter(14, .bold))
+            Spacer()
+            if entry.clip != nil {
+                Button { dictionary.play(entry) } label: {
+                    Label("Play", systemImage: "play.circle.fill").font(.inter(12, .semibold))
+                }
+                .buttonStyle(.plain).foregroundStyle(Palette.pink).help("Hear how you said it")
+            }
+            Button {
+                editing = entry.id; editWord = entry.word; editSounds = entry.sounds ?? ""
+            } label: {
+                Image(systemName: "pencil.circle.fill").font(.inter(18)).foregroundStyle(Palette.lavender)
+            }
+            .buttonStyle(.plain).help("Edit \(entry.word)")
+            Button { dictionary.remove(entry) } label: {
+                Image(systemName: "minus.circle.fill").font(.inter(18)).foregroundStyle(Palette.orange)
+            }
+            .buttonStyle(.plain).help("Remove \(entry.word)")
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(Palette.panelRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func editRow(_ entry: PersonalDictionary.Entry) -> some View {
+        HStack(spacing: 8) {
+            PillField(placeholder: "How it sounds", text: $editSounds, onDark: false, onSubmit: { save(entry) })
+            Image(systemName: "arrow.right").foregroundStyle(Palette.greyOnLight)
+            PillField(placeholder: "Write it as", text: $editWord, onDark: false, onSubmit: { save(entry) })
+            PillButton(title: "Save", style: .yellow) { save(entry) }
+            PillButton(title: "Cancel", style: .outline) { editing = nil }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(Palette.panelRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func save(_ entry: PersonalDictionary.Entry) {
+        dictionary.update(entry, word: editWord, sounds: editSounds)
+        editing = nil
+    }
+
     private func add() {
-        dictionary.add(newWord)
+        dictionary.add(newWord, sounds: newSounds)
         newWord = ""
+        newSounds = ""
     }
 }

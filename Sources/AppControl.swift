@@ -37,15 +37,14 @@ struct LoginBanner: View {
     var body: some View {
         if account.isConfigured && !account.isSignedIn {
             HStack(spacing: 12) {
-                Image(systemName: "icloud.and.arrow.up.fill").font(.inter(16, .bold)).foregroundStyle(Palette.pink)
+                Image(systemName: "icloud.and.arrow.up.fill").font(.inter(16, .bold)).foregroundStyle(Palette.heroInk)
                 Text("Log in with Google to keep all your devices in sync.").font(.inter(14, .semibold))
                 Spacer()
-                GoogleSignInButton(title: "Log in with Google", size: .regular, isWorking: account.isWorking) { account.signIn() }
+                GoogleSignInButton(title: "Log in with Google", size: .large, isWorking: account.isWorking) { account.signIn() }
             }
             .padding(.horizontal, 20).padding(.vertical, 12)
-            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Palette.hair))
-            .foregroundStyle(Palette.white)
+            .background(Palette.cream, in: RoundedRectangle(cornerRadius: 34, style: .continuous))
+            .foregroundStyle(Palette.ink)
         }
     }
 }
@@ -69,7 +68,7 @@ struct UpdateBanner: View {
                         .font(.inter(15, .bold))
                     Text((outdated ? notice.outdatedSubtitle ?? notice.subtitle : notice.subtitle) + "  (MicFlow \(version))")
                         .font(.inter(12))
-                        .foregroundStyle((outdated ? Palette.ink : Palette.white).opacity(0.7))
+                        .foregroundStyle(Palette.ink.opacity(0.7))
                         .lineLimit(2)
                     if let problem = updater.lastError {
                         HStack(spacing: 6) {
@@ -81,22 +80,20 @@ struct UpdateBanner: View {
                     }
                 }
                 Spacer()
-                PillButton(title: "Update now", systemImage: "arrow.down.circle", style: outdated ? .ink : .cream, action: updater.install)
+                PillButton(title: "Update now", systemImage: "arrow.down.circle", style: .ink, action: updater.install)
             }
-            .foregroundStyle(outdated ? Palette.ink : Palette.white)
+            .foregroundStyle(Palette.ink)
             .padding(.horizontal, 16).padding(.vertical, 12)
-            .background(outdated ? Palette.yellow : Palette.panel, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(outdated ? .clear : Palette.hair))
+            .background(outdated ? Palette.yellow : Palette.mint, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         } else if case .installing(let step) = updater.state {
             HStack(spacing: 10) {
                 ProgressView().controlSize(.small)
                 Text(step).font(.inter(13, .semibold))
                 Spacer()
             }
-            .foregroundStyle(Palette.white)
+            .foregroundStyle(Palette.ink)
             .padding(14)
-            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Palette.hair))
+            .background(Palette.mint, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
     }
 }

@@ -79,7 +79,7 @@ enum BatchTranscriber {
         return nil
     }
 
-    private static func google(wav: Data, key: String) async -> String? {
+    static func google(wav: Data, key: String) async -> String? {
         var request = URLRequest(url: URL(string: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent")!)
         request.httpMethod = "POST"
         request.timeoutInterval = 60
@@ -99,7 +99,7 @@ enum BatchTranscriber {
         return text.isEmpty ? nil : text
     }
 
-    private static func whisper(wav: Data, key: String) async -> String? {
+    static func whisper(wav: Data, key: String) async -> String? {
         let boundary = "micflow-\(UUID().uuidString)"
         var request = URLRequest(url: URL(string: "https://api.groq.com/openai/v1/audio/transcriptions")!)
         request.httpMethod = "POST"

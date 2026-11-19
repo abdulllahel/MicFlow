@@ -39,7 +39,7 @@ struct HeroCard<Actions: View>: View {
                         Text(chip).font(.inter(11, .bold))
                     }
                     .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Color.black.opacity(0.35), in: Capsule())
+                    .background(Palette.white, in: Capsule())
                 }
             }
             Text(title).font(.display(compact ? 21 : 28)).fixedSize(horizontal: false, vertical: true)
@@ -55,7 +55,7 @@ struct HeroCard<Actions: View>: View {
         .padding(compact ? 16 : 20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.hero, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.white.opacity(0.10)))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.white.opacity(0.18)))
         .overlay(alignment: .bottomTrailing) {
             PageSticker(systemImage: systemImage).scaleEffect(compact ? 0.7 : 1)
                 .padding(.trailing, compact ? 10 : 26).padding(.bottom, compact ? 8 : 14)
@@ -219,7 +219,7 @@ struct PillMenu<Value: Hashable>: View {
                                 open = false
                             } label: {
                                 HStack {
-                                    Text(option.title).font(.system(size: 13, weight: option.value == selection ? .semibold : .regular))
+                                    Text(option.title).font(.inter(13, option.value == selection ? .semibold : .regular))
                                     Spacer()
                                     if option.value == selection { Image(systemName: "checkmark").foregroundStyle(Palette.pink) }
                                 }
@@ -317,10 +317,10 @@ struct PillButton: View {
             .font(.inter(12, .semibold))
             .foregroundStyle(foreground)
             .padding(.horizontal, 14).padding(.vertical, 8)
-            .background(background, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(style == .outline ? Color.white.opacity(0.2) : style == .outlineOnLight ? Palette.ink.opacity(0.35) : .clear,
+            .background(background, in: Capsule())
+            .overlay(Capsule().strokeBorder(style == .outline ? Color.white.opacity(0.2) : style == .outlineOnLight ? Palette.ink.opacity(0.35) : .clear,
                                             lineWidth: style == .outlineOnLight ? 1.5 : 1))
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
     }
@@ -393,7 +393,8 @@ struct PageBody<Content: View>: View {
     }
 }
 
-/// Two columns of cards, filled left then right.
+/// Two columns of cards. The cards are spread so both columns end at about the same height: each card, in order
+/// (the left group first, then the right one), goes to the column that is shorter at that point.
 struct CardColumns<Left: View, Right: View>: View {
     @ViewBuilder let left: Left
     @ViewBuilder let right: Right
@@ -403,14 +404,60 @@ struct CardColumns<Left: View, Right: View>: View {
         if compact {
             VStack(spacing: 10) { left; right }
         } else {
-            columns
+            BalancedLayout(spacing: 10) {
+                left
+                right
+            }
         }
     }
+}
 
-    private var columns: some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(spacing: 10) { left }.frame(maxWidth: .infinity)
-            VStack(spacing: 10) { right }.frame(maxWidth: .infinity)
+/// Places its children in two equal-width columns, each child in the shorter column.
+struct BalancedLayout: Layout {
+    var spacing: CGFloat = 10
+
+    private func place(_ subviews: Subviews, width: CGFloat) -> (frames: [CGRect], height: CGFloat) {
+        let colWidth = max(0, (width - spacing) / 2)
+        let heights = subviews.map { $0.sizeThatFits(ProposedViewSize(width: colWidth, height: nil)).height }
+        let n = heights.count
+        // Which column each card goes in: with up to 14 cards every split is tried and the one whose taller column is
+        // shortest wins (ties keep the earliest cards on the left); more cards fall back to "shorter column first".
+        var side = [Int](repeating: 0, count: n)
+        if n > 1 && n <= 14 {
+            var best = CGFloat.greatestFiniteMagnitude
+            for mask in 0..<(1 << (n - 1)) {   // the last card is always on the right: a split and its mirror are the same
+                var h: [CGFloat] = [0, 0], count = [0, 0]
+                for i in 0..<n {
+                    let c = (mask >> i) & 1
+                    h[c] += heights[i] + spacing; count[c] += 1
+                }
+                let tallest = max(h[0], h[1])
+                if tallest < best - 0.5 { best = tallest; for i in 0..<n { side[i] = (mask >> i) & 1 } }
+            }
+        } else {
+            var h: [CGFloat] = [0, 0]
+            for i in 0..<n { let c = h[0] <= h[1] ? 0 : 1; side[i] = c; h[c] += heights[i] + spacing }
+        }
+        var y: [CGFloat] = [0, 0]
+        var frames: [CGRect] = []
+        for i in 0..<n {
+            let c = side[i]
+            frames.append(CGRect(x: CGFloat(c) * (colWidth + spacing), y: y[c], width: colWidth, height: heights[i]))
+            y[c] += heights[i] + spacing
+        }
+        return (frames, max(0, max(y[0], y[1]) - spacing))
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 700
+        return CGSize(width: width, height: place(subviews, width: width).height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = place(subviews, width: bounds.width)
+        for (view, frame) in zip(subviews, result.frames) {
+            view.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), anchor: .topLeading,
+                       proposal: ProposedViewSize(width: frame.width, height: frame.height))
         }
     }
 }
@@ -424,8 +471,8 @@ struct WhitePanel<Content: View>: View {
             .foregroundStyle(Palette.panelText)
             .padding(22)
             .frame(maxWidth: .infinity, alignment: .topLeading)
-            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Palette.hair))
+            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Palette.hair))
             .environment(\.colorScheme, .dark)
     }
 }
@@ -553,6 +600,7 @@ struct VoicePage: View {
                 }
                 MicPickerCard(voice: voice, theme: theme)
                 RecoverCard(voice: voice, theme: theme)
+                FloatingPillCard(voice: voice, theme: theme)
             } right: {
                 if voice.engine == .geminiLive || voice.polish {
                     FeatureCard(theme: theme, systemImage: "key.fill", title: "API key", subtitle: "Kept in your Mac's Keychain") {
@@ -1179,7 +1227,7 @@ struct ActionPicker: View {
                                             open = false
                                         } label: {
                                             HStack {
-                                                Text(action.title).font(.system(size: 13, weight: action == selection ? .semibold : .regular))
+                                                Text(action.title).font(.inter(13, action == selection ? .semibold : .regular))
                                                 Spacer()
                                                 if action == selection { Image(systemName: "checkmark").foregroundStyle(Palette.pink) }
                                             }

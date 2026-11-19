@@ -6,7 +6,7 @@ import SwiftUI
 struct MicFlowApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
-    init() { ProviderChain.selfTestIfAsked() }
+    init() { ProviderChain.selfTestIfAsked(); M2SelfTest.runIfAsked() }
 
     var body: some Scene {
         MenuBarExtra {

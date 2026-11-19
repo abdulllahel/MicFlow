@@ -43,8 +43,10 @@ struct KeyOnboarding: View {
                         HStack(spacing: 10) {
                             SecureField("Paste your API key here", text: $key)
                                 .textFieldStyle(.plain).font(.inter(18, .semibold))
+                                .foregroundStyle(Palette.ink)
+                                .environment(\.colorScheme, .light)
                                 .padding(.horizontal, 18).padding(.vertical, 16)
-                                .background(Color(hex: 0xF2F2F0), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                                .background(Color(hex: 0xF2F2F0), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                                 .onSubmit(check)
                             PillButton(title: checking ? "Checking…" : "Save key", systemImage: "key.fill", style: .yellow, action: check)
                         }
@@ -161,7 +163,7 @@ private struct CopyKeyIllustration: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "key.fill").foregroundStyle(Palette.cream)
-            Text("AIzaSy•••••••••••••••••••••••••").font(.system(size: 14, design: .monospaced)).foregroundStyle(Palette.white)
+            Text("AIzaSy•••••••••••••••••••••••••").font(.inter(14)).foregroundStyle(Palette.white)
             Spacer()
             HStack(spacing: 6) {
                 Image(systemName: "doc.on.doc.fill")

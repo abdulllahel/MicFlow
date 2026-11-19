@@ -24,6 +24,8 @@ final class UniversalClipboard: ObservableObject {
 
     private let account: Account
     let deviceID: String
+    /// The devices linked to your account (kept in the account's settings).
+    let devices: ClipboardDevices
     private var lastChange = NSPasteboard.general.changeCount
     private var poll: Timer?
     private var socket: URLSessionWebSocketTask?
@@ -34,6 +36,8 @@ final class UniversalClipboard: ObservableObject {
         self.account = account
         if let id = UserDefaults.standard.string(forKey: "clipboardDeviceID") { deviceID = id }
         else { deviceID = UUID().uuidString; UserDefaults.standard.set(deviceID, forKey: "clipboardDeviceID") }
+        devices = ClipboardDevices(deviceID: deviceID)
+        devices.onRemovedChanged = { [weak self] in self?.restart() }
     }
 
     // MARK: Pairing code
@@ -86,12 +90,12 @@ final class UniversalClipboard: ObservableObject {
 
     /// History is sealed with the same key your linked devices share, so only they can read it.
     func sealHistory(_ plain: Data) -> Data? {
-        guard let key = sharedKey, let box = try? AES.GCM.seal(plain, using: key) else { return nil }
+        guard !devices.removedHere, let key = sharedKey, let box = try? AES.GCM.seal(plain, using: key) else { return nil }
         return box.combined
     }
 
     func openHistory(_ sealed: Data) -> Data? {
-        guard let key = sharedKey, let box = try? AES.GCM.SealedBox(combined: sealed) else { return nil }
+        guard !devices.removedHere, let key = sharedKey, let box = try? AES.GCM.SealedBox(combined: sealed) else { return nil }
         return try? AES.GCM.open(box, using: key)
     }
 
@@ -143,6 +147,7 @@ final class UniversalClipboard: ObservableObject {
     func restart() {
         poll?.invalidate(); poll = nil
         socketTask?.cancel(); socket?.cancel(); socket = nil
+        if devices.removedHere { status = "Removed from your devices. Sign in again to link this Mac."; return }
         guard enabled, sharedKey != nil else { status = enabled ? "" : "Off"; return }
         lastChange = NSPasteboard.general.changeCount
         poll = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in

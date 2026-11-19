@@ -626,7 +626,7 @@ private struct ComposeRequest: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Request a feature").font(.title2.bold())
+                Text("Request a feature").font(.inter(20, .bold))
                 Spacer()
                 Picker("For", selection: $platform) {
                     ForEach(RequestPlatform.allCases) { Label($0.title, systemImage: $0.systemImage).tag($0) }
@@ -635,9 +635,9 @@ private struct ComposeRequest: View {
                 .fixedSize()
                 .help("Which MicFlow app this idea is for")
             }
-            TextField("Headline, e.g. \"Dictate in Hindi too\"", text: $title).textFieldStyle(.roundedBorder).font(.title3)
-            Text("Details").font(.headline)
-            TextEditor(text: $text).font(.body).frame(minHeight: 160)
+            TextField("Headline, e.g. \"Dictate in Hindi too\"", text: $title).textFieldStyle(.roundedBorder).font(.inter(16))
+            Text("Details").font(.inter(14, .semibold))
+            TextEditor(text: $text).font(.inter(14)).frame(minHeight: 160)
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
             HStack {
                 Button("Add pictures…", action: choose)
@@ -656,9 +656,9 @@ private struct ComposeRequest: View {
                 }
             }
             if title.trimmingCharacters(in: .whitespaces).count < 4 {
-                Text("Add a headline of at least 4 letters to post.").font(.caption).foregroundStyle(.secondary)
+                Text("Add a headline of at least 4 letters to post.").font(.inter(11)).foregroundStyle(.secondary)
             }
-            if let error = store.error { Text(error).foregroundStyle(.red).font(.callout) }
+            if let error = store.error { Text(error).foregroundStyle(.red).font(.inter(13)) }
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
