@@ -44,7 +44,7 @@ struct KeyOnboarding: View {
                             SecureField("Paste your API key here", text: $key)
                                 .textFieldStyle(.plain).font(.inter(18, .semibold))
                                 .padding(.horizontal, 18).padding(.vertical, 16)
-                                .background(Color(hex: 0xF2F2F0), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                .background(Color(hex: 0xF2F2F0), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                                 .onSubmit(check)
                             PillButton(title: checking ? "Checking…" : "Save key", systemImage: "key.fill", style: .yellow, action: check)
                         }

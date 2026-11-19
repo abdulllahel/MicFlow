@@ -209,7 +209,7 @@ private struct TextBox: View {
     var body: some View {
         Text(text)
             .font(.inter(14, .medium))
-            .foregroundStyle(isError ? Color(hex: 0xFF8904) : Color(hex: 0xF2F0ED))
+            .foregroundStyle(isError ? Color(hex: 0xFF535C) : Color(hex: 0xF2F0ED))
             .lineSpacing(2)
             .lineLimit(5)
             .truncationMode(.head)
@@ -218,8 +218,8 @@ private struct TextBox: View {
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(hex: 0x0A1012)))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.white.opacity(0.16)))
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(hex: 0x0E0E0F)))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.white.opacity(0.10)))
             .shadow(color: .black.opacity(0.5), radius: 18, y: 10)
     }
 }
@@ -239,7 +239,7 @@ private struct GlowingPill: View {
             content
         }
         .padding(.leading, 12).padding(.trailing, 20).padding(.vertical, 10)
-        .background(Capsule().fill(Color(hex: 0x0B1214)))
+        .background(Capsule().fill(Color(hex: 0x0E0E0F)))
         .overlay(Capsule().strokeBorder(live ? Self.teal.opacity(0.75) : Color.white.opacity(0.16), lineWidth: 1))
         .shadow(color: live ? Self.teal.opacity(0.4 + Double(state.smoothed) * 0.3) : .clear, radius: live ? 22 : 0)
         .shadow(color: .black.opacity(0.6), radius: 14, y: 8)
@@ -271,7 +271,7 @@ private struct GlowingPill: View {
             }
         case .failed:
             HStack(spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color(hex: 0xFF8904))
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color(hex: 0xFF535C))
                 Text("Couldn't type").font(.inter(13, .medium)).foregroundStyle(Color(hex: 0xF2F0ED))
             }
         case .listening, .hidden:
@@ -322,26 +322,26 @@ private struct WaveLineView: View {
             if !state.text.isEmpty {
                 Text(state.text)
                     .font(.inter(13, .medium))
-                    .foregroundStyle(state.phase == .failed ? Color(hex: 0xFF8904) : Color(hex: 0xF2F0ED))
+                    .foregroundStyle(state.phase == .failed ? Color(hex: 0xFF535C) : Color(hex: 0xF2F0ED))
                     .lineLimit(4)
                     .truncationMode(.head)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 8)
                     .background(UnevenRoundedRectangle(topLeadingRadius: 14, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 14, style: .continuous)
-                        .fill(Color(hex: 0x0A1012)))
+                        .fill(Color(hex: 0x0E0E0F)))
                     .transition(.opacity)
             }
             HStack(spacing: 10) {
                 Image(systemName: "line.3.horizontal").font(.system(size: 10, weight: .bold)).foregroundStyle(Color.white.opacity(0.35))
-                WaveLine(levels: state.levels, color: state.phase == .failed ? Color(hex: 0xFF8904) : Self.teal)
+                WaveLine(levels: state.levels, color: state.phase == .failed ? Color(hex: 0xFF535C) : Self.teal)
                     .frame(height: 28)
                 status
                 micMenu
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
             .background(UnevenRoundedRectangle(topLeadingRadius: state.text.isEmpty ? 14 : 0, bottomLeadingRadius: 14, bottomTrailingRadius: 14,
-                                               topTrailingRadius: state.text.isEmpty ? 14 : 0, style: .continuous).fill(Color(hex: 0x0B1214)))
+                                               topTrailingRadius: state.text.isEmpty ? 14 : 0, style: .continuous).fill(Color(hex: 0x0E0E0F)))
         }
         .overlay(alignment: .bottom) { EmptyView() }
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -356,7 +356,7 @@ private struct WaveLineView: View {
     @ViewBuilder private var status: some View {
         switch state.phase {
         case .transcribing: ProgressView().controlSize(.small).colorScheme(.dark)
-        case .failed: Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color(hex: 0xFF8904))
+        case .failed: Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color(hex: 0xFF535C))
         default:
             Text(state.keyName).font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0xF2F0ED))
                 .padding(.horizontal, 7).padding(.vertical, 3).background(Color.white.opacity(0.12), in: Capsule())

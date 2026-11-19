@@ -210,8 +210,22 @@ struct ProvidersCard: View {
     var body: some View {
         FeatureCard(theme: theme, systemImage: "arrow.triangle.branch", title: "Backup providers",
                     subtitle: "If Google is slow or runs out") {
-            Note(text: "Google AI Studio answers first. If it fails, hits its limit, or is slow, MicFlow asks the next provider here, so dictation keeps working inside the same time limits. Add a key to switch one on.")
+            Note(text: "Google AI Studio answers first until you change the order below. If it fails, hits its limit, or is slow, MicFlow asks the next provider here, so dictation keeps working inside the same time limits. Add a key to switch one on.")
             SyncFooter(what: "Backup keys", signedIn: signedIn, status: syncStatus, syncNow: syncNow)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("ORDER").font(.inter(11, .medium)).tracking(0.9).foregroundStyle(Palette.greyOnDark)
+                ForEach(Array(settings.order.enumerated()), id: \.element) { index, id in
+                    HStack(spacing: 8) {
+                        Text("\(index + 1)").font(.inter(12, .medium)).foregroundStyle(Palette.greyOnDark).frame(width: 16)
+                        Text(id == "google" ? "Google AI Studio" : (BackupProvider.all.first { $0.id == id }?.name ?? id)).font(.inter(13))
+                        Spacer()
+                        Button { settings.move(id, by: -1) } label: { Image(systemName: "chevron.up") }
+                            .buttonStyle(.plain).disabled(index == 0).opacity(index == 0 ? 0.3 : 1)
+                        Button { settings.move(id, by: 1) } label: { Image(systemName: "chevron.down") }
+                            .buttonStyle(.plain).disabled(index == settings.order.count - 1).opacity(index == settings.order.count - 1 ? 0.3 : 1)
+                    }
+                }
+            }
             ForEach(BackupProvider.all) { backup in
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {

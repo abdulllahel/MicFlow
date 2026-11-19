@@ -151,14 +151,29 @@ enum ProviderChain {
     /// Who answered last, for the settings screen.
     static let lastAnswer = OSAllocatedUnfairLock<String>(initialState: "")
 
-    /// Google first (always), then the backups that have a key and are switched on. Backups exist only once a Google key is saved.
+    /// The saved order of provider ids ("google" and the backups). Empty until the user reorders, which means Google first.
+    static let orderKey = "provider-order"
+    static var savedOrder: [String] { UserDefaults.standard.stringArray(forKey: orderKey) ?? [] }
+    static var defaultOrder: [String] { ["google"] + BackupProvider.all.map(\.id) }
+
+    /// Every provider id in the order they are asked: the saved order first, then anything it doesn't mention in the default order.
+    static func fullOrder(_ saved: [String] = savedOrder) -> [String] {
+        let known = Set(defaultOrder)
+        var seen = Set<String>()
+        var list = saved.filter { known.contains($0) && seen.insert($0).inserted }
+        list += defaultOrder.filter { !seen.contains($0) }
+        return list
+    }
+
+    /// The providers that can answer (Google needs its key; a backup needs a key and its switch on), in the saved order, with
+    /// Google first until the user reorders. Backups exist only once a Google key is saved.
     static func providers(googleKey: String?) -> [TextProvider] {
         guard let googleKey, !googleKey.isEmpty else { return [] }
-        var list: [TextProvider] = [GoogleProvider(key: googleKey)]
+        var available: [String: TextProvider] = ["google": GoogleProvider(key: googleKey)]
         for backup in BackupProvider.all where UserDefaults.standard.object(forKey: "provider-on-\(backup.id)") as? Bool ?? true {
-            if let key = ProviderKeys.shared.key(backup.id), !key.isEmpty { list.append(backup.make(key)) }
+            if let key = ProviderKeys.shared.key(backup.id), !key.isEmpty { available[backup.id] = backup.make(key) }
         }
-        return orderedByHealth(list)
+        return orderedByHealth(fullOrder().compactMap { available[$0] })
     }
 
     static func orderedByHealth(_ list: [TextProvider]) -> [TextProvider] {
@@ -281,6 +296,9 @@ enum ProviderChain {
         let order = orderedByHealth([Mock(id: "google"), Mock(id: "groq")]).map(\.id)
         check("cooling provider goes last", order == ["groq", "google"], "\(order)")
         resetHealth()
+        // 6b. The saved order is applied; Google stays first until it is changed; unknown ids are dropped.
+        check("default order has Google first", fullOrder([]).first == "google")
+        check("saved order wins", fullOrder(["groq", "zzz", "google"]) == ["groq", "google", "openrouter", "openai"], "\(fullOrder(["groq", "zzz", "google"]))")
         // 7. Backups appear only with a Google key.
         check("no providers without a Google key", providers(googleKey: nil).isEmpty && providers(googleKey: "").isEmpty)
         check("Google alone with only its key", providers(googleKey: "k").first?.id == "google")
@@ -337,6 +355,21 @@ final class ProviderSettings: ObservableObject {
            let plain = try? AES.GCM.open(box, using: KeychainSecret.key), let text = String(data: plain, encoding: .utf8),
            let stored = CrossSync.decodeProviders(text) { state = stored }
         reconcile()
+        if let list = state.order?.list { UserDefaults.standard.set(list, forKey: ProviderChain.orderKey) }
+    }
+
+    /// The order shown and used: the account's order if there is one, else Google first.
+    var order: [String] { ProviderChain.fullOrder(state.order?.list ?? ProviderChain.savedOrder) }
+
+    /// Moves a provider one place up (-1) or down (+1). The new order is dated now, so it wins on the other devices too.
+    func move(_ id: String, by step: Int) {
+        var list = order
+        guard let i = list.firstIndex(of: id), list.indices.contains(i + step) else { return }
+        list.swapAt(i, i + step)
+        state.order = .init(list: list, t: CrossSync.nowMs())
+        UserDefaults.standard.set(list, forKey: ProviderChain.orderKey)
+        changed()
+        objectWillChange.send()
     }
 
     func isOn(_ id: String) -> Bool { UserDefaults.standard.object(forKey: "provider-on-\(id)") as? Bool ?? true }
@@ -405,6 +438,7 @@ final class ProviderSettings: ObservableObject {
         let merged = CrossSync.mergeProviders(local: state, remote: remote)
         let didChange = merged != state
         state = merged
+        if let list = merged.order?.list { UserDefaults.standard.set(list, forKey: ProviderChain.orderKey) }
         for backup in BackupProvider.all {
             if let entry = merged.keys[backup.id] {
                 if entry.deleted, ProviderKeys.shared.has(backup.id) { ProviderKeys.shared.remove(backup.id); saved.remove(backup.id) }

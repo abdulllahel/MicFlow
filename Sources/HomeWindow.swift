@@ -34,24 +34,24 @@ enum Palette {
     // Graphite and one teal accent, with a warm off-white for buttons and text (inspired by Monologue).
     static let pink = Color(hex: 0x19D0E8)          // the accent: switches, highlights, icons
     static let yellow = Color(hex: 0x19D0E8)        // accent fills (buttons, bars)
-    static let orange = Color(hex: 0xFF8904)        // warnings and errors
-    static let orangeLight = Color(hex: 0xFFB257)
+    static let orange = Color(hex: 0xFF535C)        // errors and delete (the design system's destructive red)
+    static let orangeLight = Color(hex: 0xFF8A90)
     static let lavender = Color(hex: 0x8FA3AD)
     static let cream = Color(hex: 0xF2F0ED)         // buttons and selected pills
-    static let mint = Color(hex: 0x102B1B)
-    static let mintText = Color(hex: 0x6FE39A)
+    static let mint = Color(hex: 0x19D0E8).opacity(0.10)   // the primary tint: ready and connected states
+    static let mintText = Color(hex: 0x19D0E8)
     static let ink = Color(hex: 0x111111)           // text on light fills
     static let white = Color.white
-    static let greyOnDark = Color(hex: 0xA6A6A6)
+    static let greyOnDark = Color.white.opacity(0.62)   // text-dim: the lowest body contrast the design system allows
     static let greyOnLight = Color(hex: 0x8E8E8E)
-    /// Big cards: a soft teal gradient with dark teal text.
-    static let heroTop = Color(hex: 0x8FC7C9)
-    static let heroBottom = Color(hex: 0x5E9DA3)
-    static let heroInk = Color(hex: 0x0D2A2E)
+    /// Hero panels: the deep teal glow, with warm off-white text.
+    static let heroTop = Color(hex: 0x17535C)
+    static let heroBottom = Color(hex: 0x1A2F33)
+    static let heroInk = Color(hex: 0xF2F0ED)
     static let hero = LinearGradient(colors: [heroTop, heroBottom], startPoint: .top, endPoint: .bottom)
     /// Panels in the graphite frame.
-    static let panel = Color(hex: 0x181818)
-    static let panelRaised = Color.white.opacity(0.07)
+    static let panel = Color(hex: 0x313131)          // card
+    static let panelRaised = Color(hex: 0x3A3A3A)    // secondary / hover fill
     static let panelText = Color(hex: 0xF2F0ED)
     static let hair = Color.white.opacity(0.10)
 }
@@ -64,11 +64,11 @@ struct HomeTheme {
     let bar: Color
     let barTop: Color
 
-    static let dark = HomeTheme(frame: Color(hex: 0x111111), card: Color(hex: 0x1B1B1B), selected: Color(hex: 0x282828),
-                                bar: Color(hex: 0x2C2C2C), barTop: Color(hex: 0x3A3A3A))
-    /// The same graphite with a deep teal tint.
-    static let green = HomeTheme(frame: Color(hex: 0x0D1719), card: Color(hex: 0x14262A), selected: Color(hex: 0x1B3338),
-                                 bar: Color(hex: 0x14262A), barTop: Color(hex: 0x1F4A52))
+    static let dark = HomeTheme(frame: Color(hex: 0x121212), card: Color(hex: 0x313131), selected: Color(hex: 0x3A3A3A),
+                                bar: Color(hex: 0x3A3A3A), barTop: Color(hex: 0x4A4A4A))
+    /// The design system: page #121212, cards #313131, secondary #3A3A3A (kept under the old name).
+    static let green = HomeTheme(frame: Color(hex: 0x121212), card: Color(hex: 0x313131), selected: Color(hex: 0x3A3A3A),
+                                 bar: Color(hex: 0x3A3A3A), barTop: Color(hex: 0x4A4A4A))
 }
 
 extension Color {
@@ -79,9 +79,10 @@ extension Color {
 
 /// The chunky, slightly condensed display type.
 extension Font {
-    /// Inter, the body font (bundled with the app, see InterFont).
+    /// UI text: monospaced, like the design system's mono labels (the name stays from when this was Inter). Bangla in it
+    /// falls back to the system Bangla font, which is what the design system asks for.
     static func inter(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .custom("Inter", size: size).weight(weight)
+        .system(size: size, weight: weight == .heavy || weight == .black ? .semibold : weight, design: .monospaced)
     }
 
     /// Headlines in a serif, like the reference (its UI text is monospaced).
@@ -98,8 +99,8 @@ struct DarkCard<Content: View>: View {
         content
             .padding(18)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(theme.card, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.white.opacity(0.06)))
+            .background(theme.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color.white.opacity(0.10)))
             .foregroundStyle(Palette.white)
     }
 }
@@ -362,8 +363,8 @@ private struct Sidebar: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 6).padding(.vertical, 5)
-            .background(selected ? Color.white.opacity(0.09) : .clear, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).strokeBorder(selected ? Palette.hair : .clear))
+            .background(selected ? Palette.panelRaised : .clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(selected ? Palette.hair : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -554,9 +555,9 @@ private struct ActivityCard: View {
                             let active = dictated.contains(day)
                             Text("\(number)")
                                 .font(.inter(12, .bold))
-                                .foregroundStyle(active ? Palette.white : Palette.ink.opacity(day > today ? 0.4 : 1))
+                                .foregroundStyle(active ? Color(hex: 0x06282D) : Palette.white.opacity(day > today ? 0.35 : 0.85))
                                 .frame(width: 32, height: 32)
-                                .background(active ? Palette.pink : Palette.cream, in: Circle())
+                                .background(active ? Palette.pink : Palette.panelRaised, in: Circle())
                                 .overlay(Circle().strokeBorder(day == today ? Palette.white : .clear, lineWidth: 2).padding(-3))
                         }
                     }
@@ -594,7 +595,7 @@ private struct TodayCard: View {
                     Text("\(log.averageWPM) WPM").font(.inter(11, .bold))
                 }
                 .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(Palette.white, in: Capsule())
+                .background(Color.black.opacity(0.35), in: Capsule())
             }
             Text(words == 0 ? "Hold your key and\nstart talking" : "\(words.formatted()) words\ndictated today")
                 .font(.display(25))
@@ -611,7 +612,8 @@ private struct TodayCard: View {
                     Text(copied ? "Copied" : "Copy last")
                         .font(.inter(12, .semibold)).foregroundStyle(.white)
                         .padding(.horizontal, 14).padding(.vertical, 7)
-                        .background(Palette.orange, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .background(Color.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.white.opacity(0.10)))
                 }
                 .buttonStyle(.plain)
                 .disabled(log.entries.isEmpty)
@@ -622,7 +624,7 @@ private struct TodayCard: View {
         .foregroundStyle(Palette.heroInk)
         .padding(18)
         .background(Palette.hero, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.white.opacity(0.18)))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.white.opacity(0.10)))
         .overlay(alignment: .bottomTrailing) { Sticker().offset(x: 6, y: 10) }
     }
 }
@@ -751,8 +753,8 @@ private struct DictationsPanel: View {
         .foregroundStyle(Palette.panelText)
         .padding(22)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Palette.panel, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Palette.hair))
+        .background(Palette.panel, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Palette.hair))
         .environment(\.colorScheme, .dark)
     }
 }
@@ -836,9 +838,9 @@ private struct EmptySlot: View {
         .foregroundStyle(Palette.mintText)
         .frame(maxWidth: .infinity)
         .frame(height: 130)
-        .background(Palette.mint, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .strokeBorder(Palette.mintText.opacity(0.6), style: StrokeStyle(lineWidth: 1.2, dash: [5, 4])))
+        .background(Palette.mint, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .strokeBorder(Palette.mintText.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
     }
 }
 
@@ -858,11 +860,6 @@ private struct DictationCard: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
         } label: {
             VStack(alignment: .leading, spacing: 0) {
-                if style == .orange || style == .pink {
-                    Texture(base: style == .orange ? Color(hex: 0x16383E) : Color(hex: 0x123027),
-                            light: style == .orange ? Color(hex: 0x1F5A64) : Color(hex: 0x1C4A3A))
-                        .frame(height: 46)
-                }
                 VStack(alignment: .leading, spacing: 5) {
                     Text(copied ? "Copied" : "\(entry.date.formatted(date: .omitted, time: .shortened)) · \(entry.words) words")
                         .font(.inter(10, .semibold)).opacity(0.75)
@@ -873,8 +870,9 @@ private struct DictationCard: View {
                 .padding(12)
             }
             .foregroundStyle(foreground)
-            .background(background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(style == .yellow ? Palette.pink.opacity(0.5) : Color.white.opacity(0.10)))
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(.plain)
         .help("Copy")
@@ -882,17 +880,12 @@ private struct DictationCard: View {
 
     private var background: Color {
         switch style {
-        case .orange: return Color(hex: 0x16383E)
-        case .lavender: return Color(hex: 0x2C353A)
-        case .pink: return Color(hex: 0x123027)
-        case .yellow: return Palette.yellow
-        case .cream: return Palette.cream
+        case .yellow: return Color(hex: 0x1B3F45)     // the newest one carries the accent tint
+        default: return Palette.panelRaised
         }
     }
 
-    private var foreground: Color {
-        style == .yellow || style == .cream ? Palette.ink : Palette.white
-    }
+    private var foreground: Color { Palette.white }
 }
 
 /// Flowing bands like the reference's marbled image cards, drawn rather than photographed.
@@ -1034,13 +1027,13 @@ private struct WeeklyCard: View {
 private struct Stripes: View {
     var body: some View {
         Canvas { context, size in
-            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Palette.orange))
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Palette.pink.opacity(0.35)))
             var x: CGFloat = -size.height
             while x < size.width {
                 var path = Path()
                 path.move(to: CGPoint(x: x, y: size.height))
                 path.addLine(to: CGPoint(x: x + size.height, y: 0))
-                context.stroke(path, with: .color(Palette.orangeLight), lineWidth: 3)
+                context.stroke(path, with: .color(Palette.pink.opacity(0.7)), lineWidth: 3)
                 x += 8
             }
         }
@@ -1055,10 +1048,10 @@ private struct Tooltip: View {
         VStack(alignment: .leading, spacing: 5) {
             Text("Today").font(.inter(9)).foregroundStyle(Palette.greyOnDark)
             legend(Palette.yellow, "Words", words)
-            legend(Palette.orange, "Dictations", dictations)
+            legend(Palette.white.opacity(0.5), "Dictations", dictations)
         }
         .padding(9)
-        .background(Color(hex: 0x3A3A3A), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(Color(hex: 0x3A3A3A), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func legend(_ color: Color, _ title: String, _ value: Int) -> some View {
@@ -1087,7 +1080,7 @@ private struct NumbersCard: View {
                 .padding(.bottom, 4)
                 row("speedometer", Palette.pink, "Average speed", "\(log.averageWPM)", "WPM", highlighted: true)
                 row("text.word.spacing", Palette.yellow, "Total words", log.totalWords.formatted(), "")
-                row("flame.fill", Palette.orange, "Streak", "\(log.streak)", log.streak == 1 ? "day" : "days")
+                row("flame.fill", Palette.lavender, "Streak", "\(log.streak)", log.streak == 1 ? "day" : "days")
                 row("hourglass", Palette.lavender, "Time saved", Self.duration(log.minutesSaved), "")
             }
         }

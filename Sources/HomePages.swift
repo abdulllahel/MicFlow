@@ -39,7 +39,7 @@ struct HeroCard<Actions: View>: View {
                         Text(chip).font(.inter(11, .bold))
                     }
                     .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Palette.white, in: Capsule())
+                    .background(Color.black.opacity(0.35), in: Capsule())
                 }
             }
             Text(title).font(.display(compact ? 21 : 28)).fixedSize(horizontal: false, vertical: true)
@@ -55,7 +55,7 @@ struct HeroCard<Actions: View>: View {
         .padding(compact ? 16 : 20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.hero, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.white.opacity(0.18)))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.white.opacity(0.10)))
         .overlay(alignment: .bottomTrailing) {
             PageSticker(systemImage: systemImage).scaleEffect(compact ? 0.7 : 1)
                 .padding(.trailing, compact ? 10 : 26).padding(.bottom, compact ? 8 : 14)
@@ -317,10 +317,10 @@ struct PillButton: View {
             .font(.inter(12, .semibold))
             .foregroundStyle(foreground)
             .padding(.horizontal, 14).padding(.vertical, 8)
-            .background(background, in: Capsule())
-            .overlay(Capsule().strokeBorder(style == .outline ? Color.white.opacity(0.2) : style == .outlineOnLight ? Palette.ink.opacity(0.35) : .clear,
+            .background(background, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(style == .outline ? Color.white.opacity(0.2) : style == .outlineOnLight ? Palette.ink.opacity(0.35) : .clear,
                                             lineWidth: style == .outlineOnLight ? 1.5 : 1))
-            .contentShape(Capsule())
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -424,8 +424,8 @@ struct WhitePanel<Content: View>: View {
             .foregroundStyle(Palette.panelText)
             .padding(22)
             .frame(maxWidth: .infinity, alignment: .topLeading)
-            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Palette.hair))
+            .background(Palette.panel, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Palette.hair))
             .environment(\.colorScheme, .dark)
     }
 }
