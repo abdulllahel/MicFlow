@@ -48,6 +48,8 @@ final class GeminiLiveTranscriber: LiveTranscriber {
     private var pendingFixes = 0
     private var interimFix: (source: String, fixed: String)?
     private var interimFixRunning = false
+    /// When the current guess first showed Bengali letters; an English conversation holds it back for 0.4 s at most.
+    private var bengaliInterimSince: Date?
     private var lastInterimFix = Date.distantPast
 
     private static func hasBengali(_ text: String) -> Bool {
@@ -66,7 +68,8 @@ final class GeminiLiveTranscriber: LiveTranscriber {
     private var visibleInterim: String {
         guard Self.hasBengali(interim) else { return interim }
         if let fix = interimFix, interim.hasPrefix(fix.source) { return fix.fixed + String(interim.dropFirst(fix.source.count)) }
-        return englishContext ? "" : interim
+        if englishContext, let since = bengaliInterimSince, Date().timeIntervalSince(since) < 0.4 { return "" }
+        return interim
     }
 
     private func checkInterim() {
@@ -76,7 +79,7 @@ final class GeminiLiveTranscriber: LiveTranscriber {
         lastInterimFix = Date()
         let source = interim, before = finals
         Task {
-            let fixed = await Polisher.fixScript(source, context: before, key: key)
+            let fixed = await Polisher.fixScript(source, context: before, key: key, limit: 3)
             interimFixRunning = false
             guard !closed, interim.hasPrefix(source) else { return }
             // No answer within the limit: the guess is shown as it is.
@@ -91,7 +94,7 @@ final class GeminiLiveTranscriber: LiveTranscriber {
         let before = segments.prefix(index).reduce("") { Self.join($0, $1) }
         pendingFixes += 1
         Task {
-            let fixed = await Polisher.fixScript(original, context: before, key: key)
+            let fixed = await Polisher.fixScript(original, context: before, key: key, limit: 3)
             pendingFixes -= 1
             guard let fixed, fixed != original, index < segments.count, segments[index] == original else { return }
             segments[index] = fixed
@@ -222,6 +225,7 @@ final class GeminiLiveTranscriber: LiveTranscriber {
             finals = segments.reduce("") { Self.join($0, $1) }
             interim = ""
             interimFix = nil
+            bengaliInterimSince = nil
             speechSinceFinal = false
             if ended { finalAfterEnd = true }
             if !segments.isEmpty { checkSegment(at: segments.count - 1) }
@@ -229,6 +233,17 @@ final class GeminiLiveTranscriber: LiveTranscriber {
         }
         if let guess = (content["interimInputTranscription"] as? [String: Any])?["text"] as? String {
             interim = TextGuard.sanitize(TextGuard.stripStops(guess))
+            if Self.hasBengali(interim) {
+                if bengaliInterimSince == nil {
+                    let since = Date()
+                    bengaliInterimSince = since
+                    // After 0.4 s a guess that is still unchecked is shown as it is; a later answer replaces it.
+                    Task {
+                        try? await Task.sleep(nanoseconds: 410_000_000)
+                        if !closed, bengaliInterimSince == since { onText(text) }
+                    }
+                }
+            } else { bengaliInterimSince = nil }
             checkInterim()
             onText(text)
         }

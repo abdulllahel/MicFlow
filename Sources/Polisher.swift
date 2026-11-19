@@ -101,7 +101,7 @@ enum Polisher {
 
     /// Puts English that the speech model wrote in Bengali letters back into English letters, and leaves real Bengali alone.
     /// `context` is the words before this piece, so the model can tell which language is being spoken. Nil if it can't answer.
-    static func fixScript(_ piece: String, context: String, key: String) async -> String? {
+    static func fixScript(_ piece: String, context: String, key: String, limit: Double = 3) async -> String? {
         let instructions = """
             You check one piece of a live speech transcript. The speaker talks English, Bengali, or both. The speech \
             recognizer sometimes writes ENGLISH speech in Bengali letters (a transliteration), for example \
@@ -115,8 +115,8 @@ enum Polisher {
         var prompt = piece
         let context = context.trimmingCharacters(in: .whitespacesAndNewlines)
         if !context.isEmpty { prompt = "Words before this piece (for the language only, do not output them): \(context.suffix(160))\n\nPiece to fix:\n\(piece)" }
-        // A hard limit of 0.4 s: a slower answer is worth nothing in a live preview, so the text stays as it was.
-        let limit = 0.4
+        // The preview never waits for this (it holds a Bengali-looking guess back for 0.4 s at most); the answer is applied whenever
+        // it arrives within `limit`, because the provider often needs more than a second.
         let answer: String? = await withTaskGroup(of: String?.self) { group in
             group.addTask { (try? await request(prompt, instructions: instructions, model: model, key: key, timeout: limit)) ?? nil }
             group.addTask { try? await Task.sleep(nanoseconds: UInt64(limit * 1_000_000_000)); return nil }
