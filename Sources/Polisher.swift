@@ -11,7 +11,7 @@ enum Polisher {
     /// The fastest model. (The bigger one was a fallback, but it adds seconds and shares the quota.)
     static let model = "gemini-3.5-flash-lite"
     /// Seconds before a second request is sent.
-    private static let hedge = 0.9
+    private static let hedge = 0.35
     private static let base = "https://generativelanguage.googleapis.com/v1beta/models"
 
     /// Opens the connection ahead of time (while you're still speaking), so the clean-up request
@@ -67,10 +67,10 @@ enum Polisher {
         }
     }
 
-    private static func request(_ text: String, instructions: String, model: String, key: String) async throws -> String? {
+    private static func request(_ text: String, instructions: String, model: String, key: String, timeout: Double = 5) async throws -> String? {
         var request = URLRequest(url: URL(string: "\(base)/\(model):generateContent")!)
         request.httpMethod = "POST"
-        request.timeoutInterval = 5
+        request.timeoutInterval = timeout
         request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let body: [String: Any] = [
@@ -109,8 +109,17 @@ enum Polisher {
         var prompt = piece
         let context = context.trimmingCharacters(in: .whitespacesAndNewlines)
         if !context.isEmpty { prompt = "Words before this piece (for the language only, do not output them): \(context.suffix(160))\n\nPiece to fix:\n\(piece)" }
-        if let answer = try? await request(prompt, instructions: instructions, model: model, key: key), !answer.isEmpty { return answer }
-        return nil
+        // A hard limit of 0.4 s: a slower answer is worth nothing in a live preview, so the text stays as it was.
+        let limit = 0.4
+        let answer: String? = await withTaskGroup(of: String?.self) { group in
+            group.addTask { (try? await request(prompt, instructions: instructions, model: model, key: key, timeout: limit)) ?? nil }
+            group.addTask { try? await Task.sleep(nanoseconds: UInt64(limit * 1_000_000_000)); return nil }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+        guard let answer, !answer.isEmpty else { return nil }
+        return answer
     }
 
     /// What MicFlow always tells the model, then the user's mix-ups and own instructions.

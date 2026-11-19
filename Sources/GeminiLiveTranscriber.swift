@@ -78,8 +78,9 @@ final class GeminiLiveTranscriber: LiveTranscriber {
         Task {
             let fixed = await Polisher.fixScript(source, context: before, key: key)
             interimFixRunning = false
-            guard !closed, let fixed, interim.hasPrefix(source) else { return }
-            interimFix = (source, fixed)
+            guard !closed, interim.hasPrefix(source) else { return }
+            // No answer within the limit: the guess is shown as it is.
+            interimFix = (source, fixed ?? source)
             onText(text)
         }
     }

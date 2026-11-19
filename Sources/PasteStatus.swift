@@ -28,11 +28,13 @@ final class PasteStatus {
             schedule(hide: 1.2)
             return current
         }
+        // From the moment it is pasted: Return (or Enter) means the message was sent, so the clean-up stops and no
+        // more of the API is used. (Esc cancels it too.)
+        listenForEsc()
         let work = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, self.onCancel != nil else { return }
                 self.state.phase = .polishing
-                self.listenForEsc()
             }
         }
         showPolishing = work
@@ -56,7 +58,17 @@ final class PasteStatus {
     private func listenForEsc() {
         guard escTap == nil else { return }
         let tap = EventTap(types: [.keyDown]) { [weak self] _, event in
-            let isEsc = event.getIntegerValueField(.keyboardEventKeycode) == Int64(kVK_Escape)
+            let code = event.getIntegerValueField(.keyboardEventKeycode)
+            if code == Int64(kVK_Return) || code == Int64(kVK_ANSI_KeypadEnter) {
+                // Sent: stop cleaning up. The key itself goes on to the app.
+                MainActor.assumeIsolated {
+                    let cancel = self?.onCancel
+                    self?.done()
+                    cancel?()
+                }
+                return true
+            }
+            let isEsc = code == Int64(kVK_Escape)
             let plain = event.flags.intersection([.maskCommand, .maskAlternate, .maskControl, .maskShift]).isEmpty
             guard isEsc, plain else { return true }
             MainActor.assumeIsolated {

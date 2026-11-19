@@ -713,7 +713,7 @@ final class VoiceTypingModel: ObservableObject {
                           let polished = await Polisher.polish(full, mixUps: fixMixUps ? mixUps : [],
                                                                yourInstructions: instructionsEnabled ? yourInstructions : "",
                                                                screen: screenText,
-                                                               key: cachedKey, timeLimit: 2) else { return full }
+                                                               key: cachedKey, timeLimit: 0.8) else { return full }
                     return MyWords.spell(polished, myWords)
                 }
                 let statusID = pasteStatus.pasted(polishing: willPolish) {
