@@ -37,10 +37,76 @@ final class GeminiLiveTranscriber: LiveTranscriber {
     var isUsable: Bool { !closed && failure == nil }
 
     var text: String {
-        Self.spaceSentences(Self.join(finals, interim)).trimmingCharacters(in: .whitespacesAndNewlines)
+        Self.spaceSentences(Self.join(finals, visibleInterim)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // MARK: English written in Bengali letters
+    // The recognizer sometimes writes English speech in Bengali letters. Each finished piece with Bengali letters is checked
+    // by a quick model that puts English back into English; a guess still being spoken is held back (in an English
+    // conversation) until it has been checked, so wrong letters don't flash in the preview.
+    private let key: String
+    private var pendingFixes = 0
+    private var interimFix: (source: String, fixed: String)?
+    private var interimFixRunning = false
+    private var lastInterimFix = Date.distantPast
+
+    private static func hasBengali(_ text: String) -> Bool {
+        text.unicodeScalars.contains { (0x0980...0x09FF).contains($0.value) }
+    }
+
+    /// True once the finished words are mostly Latin letters: an English conversation.
+    private var englishContext: Bool {
+        let letters = finals.unicodeScalars.filter { CharacterSet.letters.contains($0) }
+        guard letters.count >= 12 else { return false }
+        let latin = letters.filter { $0.value < 0x0250 }.count
+        return Double(latin) / Double(letters.count) >= 0.6
+    }
+
+    /// The guess at the piece being spoken, as shown: a Bengali-looking guess in an English conversation waits for its check.
+    private var visibleInterim: String {
+        guard Self.hasBengali(interim) else { return interim }
+        if let fix = interimFix, interim.hasPrefix(fix.source) { return fix.fixed + String(interim.dropFirst(fix.source.count)) }
+        return englishContext ? "" : interim
+    }
+
+    private func checkInterim() {
+        guard Self.hasBengali(interim), !interimFixRunning, Date().timeIntervalSince(lastInterimFix) > 0.7 else { return }
+        if interimFix.map({ interim.hasPrefix($0.source) && $0.source.count + 6 >= interim.count }) == true { return }
+        interimFixRunning = true
+        lastInterimFix = Date()
+        let source = interim, before = finals
+        Task {
+            let fixed = await Polisher.fixScript(source, context: before, key: key)
+            interimFixRunning = false
+            guard !closed, let fixed, interim.hasPrefix(source) else { return }
+            interimFix = (source, fixed)
+            onText(text)
+        }
+    }
+
+    private func checkSegment(at index: Int) {
+        let original = segments[index]
+        guard Self.hasBengali(original) else { return }
+        let before = segments.prefix(index).reduce("") { Self.join($0, $1) }
+        pendingFixes += 1
+        Task {
+            let fixed = await Polisher.fixScript(original, context: before, key: key)
+            pendingFixes -= 1
+            guard let fixed, fixed != original, index < segments.count, segments[index] == original else { return }
+            segments[index] = fixed
+            finals = segments.reduce("") { Self.join($0, $1) }
+            onText(text)
+        }
+    }
+
+    /// Waits (briefly) for the checks of finished pieces, so the last words are right before they are used.
+    private func waitForFixes(upTo limit: Double) async {
+        let start = Date()
+        while pendingFixes > 0, Date().timeIntervalSince(start) < limit { try? await Task.sleep(nanoseconds: 40_000_000) }
     }
 
     init(key: String, inputRate: Double) {
+        self.key = key
         var components = URLComponents(string: Self.endpoint)!
         components.queryItems = [URLQueryItem(name: "key", value: key)]
         socket = URLSession.shared.webSocketTask(with: components.url!)
@@ -86,6 +152,7 @@ final class GeminiLiveTranscriber: LiveTranscriber {
     /// runs a little behind the voice), then closes. Returns the full text.
     func settle() async -> String {
         try? await wait(upTo: 3)
+        await waitForFixes(upTo: 1.5)
         close()
         return text
     }
@@ -151,12 +218,15 @@ final class GeminiLiveTranscriber: LiveTranscriber {
             }
             finals = segments.reduce("") { Self.join($0, $1) }
             interim = ""
+            interimFix = nil
             speechSinceFinal = false
             if ended { finalAfterEnd = true }
+            if !segments.isEmpty { checkSegment(at: segments.count - 1) }
             onText(text)
         }
         if let guess = (content["interimInputTranscription"] as? [String: Any])?["text"] as? String {
             interim = guess
+            checkInterim()
             onText(text)
         }
         if ended, content["turnComplete"] as? Bool == true { turnComplete = true }

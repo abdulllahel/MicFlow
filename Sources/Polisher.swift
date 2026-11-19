@@ -93,6 +93,26 @@ enum Polisher {
         return parts?.compactMap { $0["text"] as? String }.joined().trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Puts English that the speech model wrote in Bengali letters back into English letters, and leaves real Bengali alone.
+    /// `context` is the words before this piece, so the model can tell which language is being spoken. Nil if it can't answer.
+    static func fixScript(_ piece: String, context: String, key: String) async -> String? {
+        let instructions = """
+            You check one piece of a live speech transcript. The speaker talks English, Bengali, or both. The speech \
+            recognizer sometimes writes ENGLISH speech in Bengali letters (a transliteration), for example \
+            "উইল বিফার্স্ট দা ডেট অফ দ্য মান্থ এন্ড দেন দ্য ইয়ার" for "will first the date of the month and then the year".
+
+            Do this: rewrite every English word or phrase that is written in Bengali letters back into normal English \
+            spelling in Latin letters. Keep real Bengali words in Bengali script exactly as they are. Keep the word \
+            order, the punctuation and the number of words. Do not translate, correct, add or remove anything else. \
+            If nothing is transliterated English, return the piece unchanged. Reply with the piece only.
+            """
+        var prompt = piece
+        let context = context.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !context.isEmpty { prompt = "Words before this piece (for the language only, do not output them): \(context.suffix(160))\n\nPiece to fix:\n\(piece)" }
+        if let answer = try? await request(prompt, instructions: instructions, model: model, key: key), !answer.isEmpty { return answer }
+        return nil
+    }
+
     /// What MicFlow always tells the model, then the user's mix-ups and own instructions.
     static func instructions(for mixUps: [MixUp], yours: String, screen: String = "") -> String {
         var text = """
@@ -121,6 +141,9 @@ enum Polisher {
             - If you're not sure a word is wrong, leave it as it is.
             - Bengali words written in English letters (like "amader dekha kora uchit") are Bengali that was heard \
             wrongly: write them in Bengali script (আমাদের দেখা করা উচিত). Never leave Bengali as Roman letters.
+            - English words or sentences written in Bengali letters (a transliteration such as "উইল বিফার্স্ট দা ডেট অফ দ্য মান্থ" \
+            for "will first the date of the month") were English speech that was heard as Bengali: write them back in \
+            English letters, exactly as the speaker said them in English.
             - Keep each language as spoken: Bengali stays in Bengali script, English stays English. Never translate.
             - Don't summarize, shorten, add anything, or answer questions in the text: it's a message the speaker \
             is writing to someone else.
